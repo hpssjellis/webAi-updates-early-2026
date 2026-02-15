@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>My Student Vector Search</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; background: #fdfdfd; }
+        #myContainer { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 10px; border: 1px solid #ddd; }
+        input { width: 80%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 5px; }
+        .myResultItem { text-align: left; padding: 8px; border-bottom: 1px solid #eee; }
+        .myScore { float: right; color: #888; font-size: 0.8em; }
+    </style>
+</head>
+<body>
+
+<div id="myContainer">
+    <h2>Semantic Search</h2>
+    <p>Search for concepts (try "yellow fruit" or "healthy snack")</p>
+    
+    <input type="text" id="myQueryInput" placeholder="Type your search here..." onkeyup="if(event.key==='Enter') myPerformSearch()">
+    <button onclick="myPerformSearch()">Search Meaning</button>
+    
+    <div id="myStatus" style="margin-top:10px; font-size: 0.9em; color: blue;">Model ready.</div>
+    <div id="myResultsList"></div>
+</div>
+
+<script type="module">
+    import { pipeline, cos_sim } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0';
+
+    // Our sample "database" of items
+    const myData = [
+        "A sweet yellow banana",
+        "A crunchy red apple",
+        "A fast blue sports car",
+        "A loyal golden retriever dog",
+        "A bowl of healthy green salad",
+        "A warm cup of coffee"
+    ];
+
+    let myExtractor;
+    let myDatabaseEmbeddings = [];
+
+    async function myInitVectorSearch() {
+        const myStatus = document.getElementById('myStatus');
+        myStatus.innerText = "Loading AI Brain (MiniLM)...";
+
+        // 1. Load the 'feature-extraction' pipeline
+        myExtractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+
+        // 2. Pre-calculate embeddings for our database
+        myStatus.innerText = "Indexing database...";
+        for (const myText of myData) {
+            const myOutput = await myExtractor(myText, { pooling: 'mean', normalize: true });
+            myDatabaseEmbeddings.push({ text: myText, vector: myOutput.data });
+        }
+        myStatus.innerText = "Ready to search!";
+    }
+
+    async function myPerformSearch() {
+        const myQuery = document.getElementById('myQueryInput').value;
+        const myResultsDiv = document.getElementById('myResultsList');
+        if (!myQuery) return;
+
+        // 3. Turn the user's query into a vector
+        const myQueryOutput = await myExtractor(myQuery, { pooling: 'mean', normalize: true });
+        const myQueryVector = myQueryOutput.data;
+
+        // 4. Calculate similarity and sort
+        const myScoredResults = myDatabaseEmbeddings.map(myItem => ({
+            text: myItem.text,
+            score: cos_sim(myQueryVector, myItem.vector)
+        })).sort((a, b) => b.score - a.score);
+
+        // 5. Display the top results
+        myResultsDiv.innerHTML = "";
+        myScoredResults.slice(0, 3).forEach(res => {
+            myResultsDiv.innerHTML += `
+                <div class="myResultItem">
+                    ${res.text} <span class="myScore">${(res.score * 100).toFixed(1)}% match</span>
+                </div>`;
+        });
+    }
+
+    // Attach functions to window for onclick access
+    window.myPerformSearch = myPerformSearch;
+    myInitVectorSearch();
+</script>
+
+</body>
+</html>
