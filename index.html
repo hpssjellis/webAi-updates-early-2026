@@ -6,53 +6,81 @@
     <title>My Student Web AI Dashboard</title>
     <style>
         body { font-family: sans-serif; line-height: 1.6; padding: 20px; background-color: #f0f2f5; color: #333; }
-        #myWrapper { max-width: 900px; margin: auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
-        h1 { color: #1a73e8; border-bottom: 2px solid #1a73e8; padding-bottom: 10px; }
-        .mySection { margin-bottom: 30px; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; transition: transform 0.2s; }
-        .mySection:hover { transform: translateY(-3px); border-color: #1a73e8; }
-        h2 { margin-top: 0; color: #d93025; } /* Transformers Red */
-        .mcp { color: #188038; } /* MCP Green */
-        .container { color: #f29900; } /* Container Orange */
-        .myLinkButton { display: inline-block; background: #1a73e8; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-top: 10px; font-weight: bold; }
-        code { background: #eee; padding: 2px 5px; border-radius: 4px; font-family: monospace; }
+        #myWrapper { max-width: 850px; margin: auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        h1 { color: #1a73e8; border-bottom: 2px solid #1a73e8; padding-bottom: 10px; margin-bottom: 20px; }
+        .myCard { 
+            border: 1px solid #e0e0e0; 
+            padding: 20px; 
+            border-radius: 8px; 
+            margin-bottom: 15px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            transition: border-color 0.2s;
+        }
+        .myCard:hover { border-color: #1a73e8; background-color: #fafafa; }
+        .myInfo h3 { margin: 0 0 5px 0; color: #1a73e8; }
+        .tag { font-size: 0.75em; padding: 3px 8px; border-radius: 12px; background: #e8f0fe; color: #1967d2; font-family: monospace; font-weight: bold; }
+        .myBtn { 
+            background: #1a73e8; 
+            color: white; 
+            padding: 12px 20px; 
+            text-decoration: none; 
+            border-radius: 5px; 
+            font-weight: bold; 
+            font-size: 0.9em;
+            text-align: center;
+            min-width: 120px;
+        }
+        .myBtn:hover { background: #1557b0; }
+        footer { margin-top: 30px; font-size: 0.85em; color: #666; text-align: center; border-top: 1px solid #eee; padding-top: 15px; }
     </style>
 </head>
 <body>
 
 <div id="myWrapper">
     <h1>Web AI Student Hub (2026)</h1>
-    <p>This page tracks the local-first AI technologies we've explored.</p>
+    <p>A simple directory of the up-to-date AI features we've built for the browser.</p>
 
-    <div class="mySection">
-        <h2>1. Vision AI (Transformers.js V4)</h2>
-        <p>Run <strong>YOLOv8</strong> models directly in your browser using WebGPU. No data ever leaves your computer.</p>
-        <code>Feature: Object Detection & Image Classification</code><br>
-        <a href="yolo_demo.html" class="myLinkButton">Open YOLO Demo</a>
+    <div class="myCard">
+        <div class="myInfo">
+            <h3>Vision AI (YOLOv8)</h3>
+            <span class="tag">transformers.js-v4</span>
+            <p style="margin: 5px 0 0 0; font-size: 0.9em;">Detect objects in images locally using WebGPU.</p>
+        </div>
+        <a href="yolo_demo.html" class="myBtn">Run Vision</a>
     </div>
 
-    <div class="mySection">
-        <h2 class="mcp">2. Agent Tools (WebMCP)</h2>
-        <p>Expose your website's functions (like <code>myCountVisitor</code>) so that AI Agents can "talk" to your page instead of just scraping it.</p>
-        <code>Feature: Browser-to-Agent Communication</code><br>
-        <a href="mcp_demo.html" class="myLinkButton">Open WebMCP Tools</a>
+    <div class="myCard">
+        <div class="myInfo">
+            <h3>Visitor Counter Tools</h3>
+            <span class="tag">webMCP protocol</span>
+            <p style="margin: 5px 0 0 0; font-size: 0.9em;">Connect your page functions to an AI Agent.</p>
+        </div>
+        <a href="mcp_demo.html" class="myBtn">Open Tools</a>
     </div>
 
-    <div class="mySection">
-        <h2 class="container">3. Browser Backend (WebContainers)</h2>
-        <p>Boot a full <strong>Node.js environment</strong> inside a tab. Great for running terminal commands and local servers without installing anything.</p>
-        <code>Feature: WASM-powered Node.js Runtime</code><br>
-        <a href="node_container.html" class="myLinkButton">Launch Node.js Tab</a>
+    <div class="myCard">
+        <div class="myInfo">
+            <h3>Node.js Browser Container</h3>
+            <span class="tag">web-containers</span>
+            <p style="margin: 5px 0 0 0; font-size: 0.9em;">Run a full Node terminal environment in a tab.</p>
+        </div>
+        <a href="node_container.html" class="myBtn">Launch Node</a>
     </div>
 
-    <div class="mySection">
-        <h2 style="color: #673ab7;">4. Suggested Next Steps</h2>
-        <p>Consider adding these examples to round out your knowledge:</p>
-        <ul>
-            <li><strong>The "Speech-to-Text" Demo:</strong> Use <code>Whisper</code> (Transformers.js) to transcribe your microphone in real-time.</li>
-            <li><strong>The "Agentic Form":</strong> A WebMCP tool that lets an AI agent fill out a multi-step survey for you.</li>
-            <li><strong>Browser RAG:</strong> Use a vector database (like <em>Voy</em>) to let an AI "chat" with a PDF you drop onto the page.</li>
-        </ul>
+    <div class="myCard">
+        <div class="myInfo">
+            <h3>Semantic Vector Search</h3>
+            <span class="tag">miniLM-L6-v2</span>
+            <p style="margin: 5px 0 0 0; font-size: 0.9em;">Search data by "meaning" instead of keywords.</p>
+        </div>
+        <a href="vector_search.html" class="myBtn">Try Search</a>
     </div>
+
+    <footer>
+        <p>Ensure your <code>myServer.js</code> is running for WebMCP connectivity.</p>
+    </footer>
 </div>
 
 </body>
