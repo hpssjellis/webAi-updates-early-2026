@@ -2,36 +2,44 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import http from "http";
 
-// 1. Create the MCP Server
-const myMcpServer = new McpServer({
-    name: "MyLocalBridge",
+const myServer = new McpServer({
+    name: "MyStudentBridge",
     version: "1.0.0"
 });
 
-// 2. Add a Tool that the AI can call
-// This tool doesn't do the work itself; it tells the browser to do it!
-myMcpServer.tool("myUpdateCounter", 
-    "Increments the visitor counter on the active mcp_demo.html page.",
-    async () => {
-        // In a real 2026 WebMCP setup, the bridge routes this to the browser
-        console.error("AI Agent is calling the 'myUpdateCounter' tool...");
-        
-        return {
-            content: [{ type: "text", text: "Tool received! Check your browser tab for the update." }]
-        };
-    }
-);
+// --- TOOL 1: COUNTER ---
+myServer.tool("myCountVisitor", "Increments the visitor counter.", async () => {
+    return { content: [{ type: "text", text: "Instruction sent to browser to increment counter." }] };
+});
 
-// 3. Simple Health Check for your index.html Dashboard
-const myHealthPort = 3000;
+// --- TOOL 2: THEME ---
+myServer.tool("mySetTheme", "Changes page color. Params: color (string)", async ({ color }) => {
+    return { content: [{ type: "text", text: `Instruction sent: Change theme to ${color}` }] };
+});
+
+// --- TOOL 3: PURPOSE ---
+myServer.tool("myGetPagePurpose", "Explains the site purpose.", async () => {
+    return { content: [{ type: "text", text: "This is a student dashboard for WebMCP learning." }] };
+});
+
+// --- TOOL 4: MESSAGE ---
+myServer.tool("myShowMessage", "Shows a message on screen. Params: message (string)", async ({ message }) => {
+    return { content: [{ type: "text", text: `Instruction sent: Display "${message}"` }] };
+});
+
+// --- TOOL 5: RANDOM FACT ---
+myServer.tool("myGetRandomFact", "Gets a random science fact.", async () => {
+    const myFacts = ["Octopuses have 3 hearts.", "Honey never spoils.", "Bananas are berries."];
+    const myFact = myFacts[Math.floor(Math.random() * myFacts.length)];
+    return { content: [{ type: "text", text: myFact }] };
+});
+
+// --- DASHBOARD HEALTH CHECK ---
 http.createServer((req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*'); // Allows your local HTML to "ping" it
+    res.setHeader('Access-Control-Allow-Origin', '*');
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: "online", message: "Bridge is active!" }));
-}).listen(myHealthPort);
+    res.end(JSON.stringify({ status: "online" }));
+}).listen(3000);
 
-// 4. Start the MCP connection
 const myTransport = new StdioServerTransport();
-myMcpServer.connect(myTransport);
-
-console.error(`MCP Bridge and Health Check running on port ${myHealthPort}`);
+myServer.connect(myTransport);
