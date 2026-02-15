@@ -28,11 +28,25 @@
     <script>
         let myVisitorCount = 0;
 
-        async function myInitializeWebMCP() {
-            if (!navigator.modelContext) {
-                console.log("WebMCP not detected. Page running in standalone mode.");
-                return;
-            }
+async function myInitializeWebMCP() {
+    if (!navigator.modelContext) return;
+
+    await navigator.modelContext.registerTool({
+        name: "myCountVisitor",
+        description: "Increments the visitor counter.",
+        // 2026 Requirement: Define an empty schema so the AI knows no args are needed
+        inputSchema: { type: "object", properties: {} }, 
+        execute: async () => {
+            myVisitorCount++; // Ensure this variable is defined globally in your script
+            document.getElementById('myCounterDisplay').innerText = myVisitorCount;
+            
+            // Helpful for debugging: update the message area too
+            document.getElementById('myAgentMessage').innerText = "AI triggered the counter!";
+            
+            return { content: [{ type: "text", text: `Counter is now ${myVisitorCount}` }] };
+        }
+    });
+}
 
             // --- TOOL 1: VISITOR COUNTER ---
             await navigator.modelContext.registerTool({
