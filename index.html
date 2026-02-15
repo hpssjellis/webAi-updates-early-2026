@@ -1,87 +1,35 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Student Web AI Dashboard</title>
-    <style>
-        body { font-family: sans-serif; line-height: 1.6; padding: 20px; background-color: #f0f2f5; color: #333; }
-        #myWrapper { max-width: 850px; margin: auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
-        h1 { color: #1a73e8; border-bottom: 2px solid #1a73e8; padding-bottom: 10px; margin-bottom: 20px; }
-        .myCard { 
-            border: 1px solid #e0e0e0; 
-            padding: 20px; 
-            border-radius: 8px; 
-            margin-bottom: 15px; 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center;
-            transition: border-color 0.2s;
-        }
-        .myCard:hover { border-color: #1a73e8; background-color: #fafafa; }
-        .myInfo h3 { margin: 0 0 5px 0; color: #1a73e8; }
-        .tag { font-size: 0.75em; padding: 3px 8px; border-radius: 12px; background: #e8f0fe; color: #1967d2; font-family: monospace; font-weight: bold; }
-        .myBtn { 
-            background: #1a73e8; 
-            color: white; 
-            padding: 12px 20px; 
-            text-decoration: none; 
-            border-radius: 5px; 
-            font-weight: bold; 
-            font-size: 0.9em;
-            text-align: center;
-            min-width: 120px;
-        }
-        .myBtn:hover { background: #1557b0; }
-        footer { margin-top: 30px; font-size: 0.85em; color: #666; text-align: center; border-top: 1px solid #eee; padding-top: 15px; }
-    </style>
-</head>
-<body>
-
-<div id="myWrapper">
-    <h1>Web AI Student Hub (2026)</h1>
-    <p>A simple directory of the up-to-date AI features we've built for the browser.</p>
-
-    <div class="myCard">
-        <div class="myInfo">
-            <h3>Vision AI (YOLOv8)</h3>
-            <span class="tag">transformers.js-v4</span>
-            <p style="margin: 5px 0 0 0; font-size: 0.9em;">Detect objects in images locally using WebGPU.</p>
-        </div>
-        <a href="yolo_demo.html" class="myBtn">Run Vision</a>
+<div id="myStatusBanner" style="padding: 10px; margin-bottom: 20px; border-radius: 8px; background: #eee; display: flex; align-items: center; justify-content: space-between;">
+    <div>
+        <span id="myStatusDot" style="height: 12px; width: 12px; background-color: #bbb; border-radius: 50%; display: inline-block; margin-right: 10px;"></span>
+        <strong>MCP Server Status:</strong> <span id="myStatusText">Checking...</span>
     </div>
-
-    <div class="myCard">
-        <div class="myInfo">
-            <h3>Visitor Counter Tools</h3>
-            <span class="tag">webMCP protocol</span>
-            <p style="margin: 5px 0 0 0; font-size: 0.9em;">Connect your page functions to an AI Agent.</p>
-        </div>
-        <a href="mcp_demo.html" class="myBtn">Open Tools</a>
-    </div>
-
-    <div class="myCard">
-        <div class="myInfo">
-            <h3>Node.js Browser Container</h3>
-            <span class="tag">web-containers</span>
-            <p style="margin: 5px 0 0 0; font-size: 0.9em;">Run a full Node terminal environment in a tab.</p>
-        </div>
-        <a href="node_container.html" class="myBtn">Launch Node</a>
-    </div>
-
-    <div class="myCard">
-        <div class="myInfo">
-            <h3>Semantic Vector Search</h3>
-            <span class="tag">miniLM-L6-v2</span>
-            <p style="margin: 5px 0 0 0; font-size: 0.9em;">Search data by "meaning" instead of keywords.</p>
-        </div>
-        <a href="vector_search.html" class="myBtn">Try Search</a>
-    </div>
-
-    <footer>
-        <p>Ensure your <code>myServer.js</code> is running for WebMCP connectivity.</p>
-    </footer>
+    <small id="myServerMsg" style="color: #666;"></small>
 </div>
 
-</body>
-</html>
+<script>
+    async function myCheckServerStatus() {
+        const myDot = document.getElementById('myStatusDot');
+        const myText = document.getElementById('myStatusText');
+        const myMsg = document.getElementById('myServerMsg');
+
+        try {
+            // Try to fetch from our local health port
+            const myResponse = await fetch('http://localhost:3000', { mode: 'cors' });
+            const myData = await myResponse.json();
+
+            if (myData.status === "online") {
+                myDot.style.backgroundColor = "#28a745"; // Green
+                myText.innerText = "Online";
+                myMsg.innerText = myData.message;
+            }
+        } catch (myError) {
+            myDot.style.backgroundColor = "#dc3545"; // Red
+            myText.innerText = "Offline";
+            myMsg.innerText = "Run 'node myServer.js' to connect.";
+        }
+    }
+
+    // Check status immediately and then every 10 seconds
+    myCheckServerStatus();
+    setInterval(myCheckServerStatus, 10000);
+</script>
