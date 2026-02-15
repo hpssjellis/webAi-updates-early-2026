@@ -25,14 +25,25 @@ myServer.js - The Node.js bridge that connects AI Agents to your browser.
 1. Install Node.js Dependencies
 Open your terminal in this project folder and run:
 
+
+```
 Bash
 npm init -y
+```
+
+```
+Bash
 npm install @modelcontextprotocol/sdk
+```
+
 2. Start the Local MCP Bridge
 This server allows AI Agents to "talk" to your static webpages.
 
+
+```
 Bash
 node myServer.js
+```
 Note: Keep this terminal window open! It also hosts a health check on http://localhost:3000 so the dashboard can see it.
 
 3. Open the Dashboard
