@@ -27,12 +27,10 @@ Open your terminal in this project folder and run:
 
 
 ```
-Bash
 npm init -y
 ```
 
 ```
-Bash
 npm install @modelcontextprotocol/sdk
 ```
 
@@ -41,7 +39,6 @@ This server allows AI Agents to "talk" to your static webpages.
 
 
 ```
-Bash
 node myServer.js
 ```
 Note: Keep this terminal window open! It also hosts a health check on http://localhost:3000 so the dashboard can see it.
