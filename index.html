@@ -1,35 +1,134 @@
-<div id="myStatusBanner" style="padding: 10px; margin-bottom: 20px; border-radius: 8px; background: #eee; display: flex; align-items: center; justify-content: space-between;">
-    <div>
-        <span id="myStatusDot" style="height: 12px; width: 12px; background-color: #bbb; border-radius: 50%; display: inline-block; margin-right: 10px;"></span>
-        <strong>MCP Server Status:</strong> <span id="myStatusText">Checking...</span>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Web AI Hub</title>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; line-height: 1.5; padding: 20px; background: #f8f9fa; color: #212529; }
+        #myWrapper { max-width: 900px; margin: auto; background: white; padding: 30px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        h1 { color: #0d6efd; border-bottom: 2px solid #e9ecef; padding-bottom: 10px; }
+        
+        /* Status Banner */
+        #myStatusBanner { display: none; padding: 12px; margin-bottom: 20px; border-radius: 8px; background: #d1e7dd; border: 1px solid #badbcc; align-items: center; }
+        .myDot { height: 10px; width: 10px; background-color: #198754; border-radius: 50%; display: inline-block; margin-right: 10px; }
+        
+        /* Card Layout */
+        .myGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 20px; }
+        .myCard { border: 1px solid #dee2e6; padding: 20px; border-radius: 12px; transition: 0.2s; background: #fff; }
+        .myCard:hover { border-color: #0d6efd; transform: translateY(-2px); }
+        h3 { margin-top: 0; color: #0d6efd; font-size: 1.25rem; }
+        p { font-size: 0.9rem; color: #6c757d; }
+        
+        /* Interactive Elements */
+        .myBtn { display: inline-block; background: #0d6efd; color: white; padding: 10px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 0.85rem; cursor: pointer; border: none; }
+        .myBtn:hover { background: #0b5ed7; }
+        .tag { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: #e9ecef; color: #495057; font-family: monospace; }
+        
+        /* Hidden Sections */
+        .myDemoArea { margin-top: 15px; padding: 10px; background: #f1f3f5; border-radius: 8px; display: none; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+
+<div id="myWrapper">
+    <div id="myStatusBanner">
+        <span class="myDot"></span>
+        <small><strong>Agent Bridge Online:</strong> Node.js MCP server detected at port 3000.</small>
     </div>
-    <small id="myServerMsg" style="color: #666;"></small>
+
+    <h1>Student AI Toolkit</h1>
+    <p>A central hub for exploring local browser AI and Agent protocols.</p>
+
+    <div class="myGrid">
+        
+        <div class="myCard">
+            <h3>Vision AI (YOLO)</h3>
+            <span class="tag">Transformers.js v4</span>
+            <p>Runs a Nano-YOLO model to identify objects in images using your GPU.</p>
+            <button class="myBtn" onclick="myToggleDemo('myVisionDemo')">Launch Vision</button>
+            <div id="myVisionDemo" class="myDemoArea">
+                <em>Refer to yolo_demo.html for full implementation.</em>
+            </div>
+        </div>
+
+        <div class="myCard">
+            <h3>Visitor Counter</h3>
+            <span class="tag">WebMCP Protocol</span>
+            <p>Exposes your page functions to AI Agents like Claude or GPT.</p>
+            <button class="myBtn" onclick="myToggleDemo('myMcpDemo')">Show MCP Info</button>
+            <div id="myMcpDemo" class="myDemoArea">
+                Count: <b id="myCount">0</b><br>
+                <small>Tools: <code>myCountVisitor</code>, <code>mySetTheme</code></small>
+            </div>
+        </div>
+
+        <div class="myCard">
+            <h3>Node Container</h3>
+            <span class="tag">WebContainers API</span>
+            <p>Boot a virtual Linux/Node environment directly inside this tab.</p>
+            <button class="myBtn" onclick="myToggleDemo('myNodeDemo')">Open Terminal</button>
+            <div id="myNodeDemo" class="myDemoArea">
+                <em>Requires COOP/COEP headers to run.</em>
+            </div>
+        </div>
+
+        <div class="myCard">
+            <h3>Semantic Search</h3>
+            <span class="tag">MiniLM Vectors</span>
+            <p>Search by concept (e.g. "yellow fruit") instead of exact words.</p>
+            <button class="myBtn" onclick="myToggleDemo('myVectorDemo')">Try Search</button>
+            <div id="myVectorDemo" class="myDemoArea">
+                <em>Enter query in search bar (vector_search.html)</em>
+            </div>
+        </div>
+
+    </div>
+
+    <p style="margin-top:40px; text-align:center; font-size:0.8rem; color:#adb5bd;">
+        Hand-coded for Web AI 2026. Keep your terminal open for MCP features.
+    </p>
 </div>
 
 <script>
-    async function myCheckServerStatus() {
-        const myDot = document.getElementById('myStatusDot');
-        const myText = document.getElementById('myStatusText');
-        const myMsg = document.getElementById('myServerMsg');
+    // 1. Simple Toggle Function for Demos
+    function myToggleDemo(myId) {
+        const myElement = document.getElementById(myId);
+        myElement.style.display = myElement.style.display === 'block' ? 'none' : 'block';
+    }
 
+    // 2. Silent Health Check for MCP Server
+    async function myCheckServer() {
+        const myBanner = document.getElementById('myStatusBanner');
         try {
-            // Try to fetch from our local health port
-            const myResponse = await fetch('http://localhost:3000', { mode: 'cors' });
-            const myData = await myResponse.json();
-
-            if (myData.status === "online") {
-                myDot.style.backgroundColor = "#28a745"; // Green
-                myText.innerText = "Online";
-                myMsg.innerText = myData.message;
+            const myRes = await fetch('http://localhost:3000', { mode: 'cors' });
+            if (myRes.ok) {
+                myBanner.style.display = 'flex';
             }
-        } catch (myError) {
-            myDot.style.backgroundColor = "#dc3545"; // Red
-            myText.innerText = "Offline";
-            myMsg.innerText = "Run 'node myServer.js' to connect.";
+        } catch (e) {
+            console.log("MCP Server offline. Dashboard running in standalone mode.");
         }
     }
 
-    // Check status immediately and then every 10 seconds
-    myCheckServerStatus();
-    setInterval(myCheckServerStatus, 10000);
+    // 3. Setup for WebMCP Tooling (Browser-Side)
+    async function mySetupMcp() {
+        if (navigator.modelContext) {
+            await navigator.modelContext.registerTool({
+                name: "myCountVisitor",
+                description: "Increment the student dashboard counter.",
+                execute: async () => {
+                    const myCountEl = document.getElementById('myCount');
+                    myCountEl.innerText = parseInt(myCountEl.innerText) + 1;
+                    return { success: true, total: myCountEl.innerText };
+                }
+            });
+        }
+    }
+
+    // Run startup tasks
+    myCheckServer();
+    mySetupMcp();
 </script>
+
+</body>
+</html>
