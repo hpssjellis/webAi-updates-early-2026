@@ -1,1 +1,16 @@
-yolo
+// Using the new V4 modular import style
+import { pipeline } from '@huggingface/transformers';
+
+async function myInitializeAiTask() {
+    // 1. Create a simple pipeline (e.g., for sentiment analysis)
+    const myClassifier = await pipeline('sentiment-analysis', 'Xenova/distilbert-base-uncased-finetuned-sst-2-english');
+
+    // 2. Run it on some text
+    const myResult = await myClassifier('I love how fast Web AI is becoming!');
+
+    console.log(myResult); 
+    // Output: [{ label: 'POSITIVE', score: 0.99 }]
+}
+
+// In a real page, you'd link this to a button:
+// <button onclick="myInitializeAiTask()">Analyze Sentiment</button>
