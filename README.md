@@ -7,6 +7,11 @@ index.html page at  https://hpssjellis.github.io/webAi-updates-early-2026/index.
 
 
 
+# Note: The webMCP is made to work and test locally. So download and unzip the entire repo.  Most of the other pages will work fine on the above demo page.
+
+
+
+
 My Web AI & MCP Local Toolkit
 This project demonstrates how to run local AI models and WebMCP agents using only Node.js and a standard web browser. No cloud hosting or external platforms are required.
 
