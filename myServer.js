@@ -8,10 +8,15 @@ const myServer = new McpServer({
 });
 
 // --- TOOL 1: COUNTER ---
-myServer.tool("myCountVisitor", "Increments the visitor counter.", async () => {
-    console.error("📢 AI Agent requested a visitor count increment.");
-    return { content: [{ type: "text", text: "Instruction sent to browser to increment counter." }] };
-});
+myServer.tool(
+    "myCountVisitor", 
+    // Add the schema here as the second argument
+    { }, // Empty object means no parameters required
+    async () => {
+        console.error("📢 Counter command received from AI. Relaying to browser...");
+        return { content: [{ type: "text", text: "Instruction sent to browser." }] };
+    }
+);
 
 // --- TOOL 2: THEME ---
 myServer.tool("mySetTheme", "Changes page color. Params: color (string)", async ({ color }) => {
