@@ -1,5 +1,5 @@
 <script type="module">
-    import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0/dist/transformers.min.js";
+    import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.3";
 
     async function myStartDetection() {
         const myStatus = document.getElementById('myStatus');
@@ -10,7 +10,7 @@
         myStatus.innerText = "Loading YOLOv8 model (this may take a moment)...";
 
         try {
-            // v4 pipeline call
+            // v4 pipeline
             const myDetector = await pipeline(
                 "object-detection",
                 "Xenova/yolov8n"
@@ -18,7 +18,6 @@
 
             myStatus.innerText = "Model loaded! Analyzing image...";
 
-            // v4 inference call (same as v3)
             const myResults = await myDetector(myImage.src);
 
             myStatus.innerText = "Detection complete! Check the console.";
