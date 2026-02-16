@@ -1,34 +1,5 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>My Simple Web AI Student App</title>
-    <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f4f9; }
-        #myContainer { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        img { max-width: 100%; border-radius: 5px; margin-top: 10px; }
-        #myStatus { color: #666; font-style: italic; margin: 10px 0; }
-        .myButton { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
-        .myButton:disabled { background: #ccc; }
-    </style>
-</head>
-<body>
-
-<div id="myContainer">
-    <h2>Student Web AI: YOLOv8</h2>
-    <p>This demo uses your browser's power to "see" objects!</p>
-    
-    <button id="myRunButton" class="myButton" onclick="myStartDetection()">Start AI Analysis</button>
-    <div id="myStatus">AI Model: Ready to load...</div>
-    
-    <div id="myOutput">
-        <img id="myImage" src="https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/cats.jpg" crossorigin="anonymous">
-    </div>
-</div>
-
 <script type="module">
-    // 1. Import from the latest v4 CDN
-    import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0';
+    import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0/dist/transformers.min.js";
 
     async function myStartDetection() {
         const myStatus = document.getElementById('myStatus');
@@ -39,33 +10,29 @@
         myStatus.innerText = "Loading YOLOv8 model (this may take a moment)...";
 
         try {
-            // 2. Initialize the 'object-detection' pipeline
-            // We use 'Xenova/yolov8n' (the 'n' stands for nano - it's small and fast!)
-            const myDetector = await pipeline('object-detection', 'Xenova/yolov8n');
-            
+            // v4 pipeline call
+            const myDetector = await pipeline(
+                "object-detection",
+                "Xenova/yolov8n"
+            );
+
             myStatus.innerText = "Model loaded! Analyzing image...";
 
-            // 3. Run the AI on the image
+            // v4 inference call (same as v3)
             const myResults = await myDetector(myImage.src);
 
-            // 4. Show the results
-            myStatus.innerText = "Detection complete! Check the console (F12) for details.";
+            myStatus.innerText = "Detection complete! Check the console.";
             console.log("AI Results:", myResults);
-            
-            // Basic alert to show success to the student
-            alert(`Found ${myResults.length} objects! \nFirst object: ${myResults[0].label}`);
 
-        } catch (myError) {
-            myStatus.innerText = "Error: " + myError.message;
-            console.error(myError);
+            alert(`Found ${myResults.length} objects!\nFirst object: ${myResults[0].label}`);
+
+        } catch (err) {
+            myStatus.innerText = "Error: " + err.message;
+            console.error(err);
         } finally {
             myButton.disabled = false;
         }
     }
 
-    // Making the function global so the button's onclick can see it
     window.myStartDetection = myStartDetection;
 </script>
-
-</body>
-</html>
