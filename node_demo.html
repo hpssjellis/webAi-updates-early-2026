@@ -4,78 +4,115 @@
     <meta charset="UTF-8">
     <title>My Node.js Browser Container</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; padding: 30px; background: #eceff1; }
-        #myApp { max-width: 700px; margin: auto; background: white; padding: 25px; border-radius: 12px; border: 1px solid #cfd8dc; }
-        #myTerminal { background: #263238; color: #80cbc4; padding: 15px; border-radius: 6px; font-family: monospace; height: 150px; overflow-y: auto; margin-top: 15px; white-space: pre-wrap; }
-        .myButton { background: #4caf50; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-size: 16px; }
-        .myButton:disabled { background: #b0bec5; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            padding: 30px;
+            background: #eceff1;
+        }
+        #myApp {
+            max-width: 700px;
+            margin: auto;
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid #cfd8dc;
+        }
+        #myTerminal {
+            background: #263238;
+            color: #80cbc4;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: monospace;
+            height: 180px;
+            overflow-y: auto;
+            margin-top: 15px;
+            white-space: pre-wrap;
+        }
+        .myButton {
+            background: #4caf50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .myButton:disabled {
+            background: #b0bec5;
+        }
     </style>
 </head>
 <body>
 
 <div id="myApp">
     <h2>Node.js in a Browser Container</h2>
-    <p>This code boots a virtual Node environment and runs a script.</p>
-    
+    <p>This demo boots a virtual Node.js environment (via WebContainers) and runs a script inside it.</p>
+
     <button id="myBtn" class="myButton" onclick="myRunNodeContainer()">Boot & Run Node.js</button>
-    
+
     <div id="myTerminal">System: Ready to boot container...</div>
 </div>
 
 <script type="module">
-    // 1. Import the WebContainer API from a CDN
     import { WebContainer } from 'https://cdn.jsdelivr.net/npm/@webcontainer/api/+esm';
 
-    let myWebcontainerInstance;
+    let wc;
 
     async function myRunNodeContainer() {
-        const myTerminal = document.getElementById('myTerminal');
-        const myBtn = document.getElementById('myBtn');
-        
-        myBtn.disabled = true;
-        myTerminal.innerText = "Status: Booting WebContainer (WASM Node.js)...";
+        const term = document.getElementById('myTerminal');
+        const btn = document.getElementById('myBtn');
+
+        function log(msg) {
+            term.innerText += `\n${msg}`;
+            term.scrollTop = term.scrollHeight;
+        }
+
+        btn.disabled = true;
+        term.innerText = "Status: Booting WebContainer...";
 
         try {
-            // 2. Boot the container (can only be done once per page load)
-            if (!myWebcontainerInstance) {
-                myWebcontainerInstance = await WebContainer.boot();
-            }
+            // Boot once per page load
+            if (!wc) wc = await WebContainer.boot();
 
-            // 3. Define the "files" for our Node project
-            const myFiles = {
+            // Define files
+            const files = {
                 'myIndex.js': {
-                    file: {
-                        contents: "console.log('Hello from inside the Node container!'); console.log('Current Time:', new Date().toLocaleTimeString());"
-                    }
+                    contents: `
+                        console.log("Hello from inside the Node container!");
+                        console.log("Current Time:", new Date().toLocaleTimeString());
+                    `
                 }
             };
 
-            // 4. Mount the files into the virtual filesystem
-            await myWebcontainerInstance.mount(myFiles);
-            myTerminal.innerText += "\nStatus: Files mounted. Running 'node myIndex.js'...";
+            // Mount files
+            await wc.mount(files);
+            log("Status: Files mounted. Running 'node myIndex.js'...");
 
-            // 5. Spawn the node process
-            const myProcess = await myWebcontainerInstance.spawn('node', ['myIndex.js']);
-            
-            // 6. Pipe the output to our "terminal" on the screen
-            myProcess.output.pipeTo(new WritableStream({
-                write(myData) {
-                    myTerminal.innerText += `\n> ${myData}`;
-                }
+            // Spawn Node process
+            const proc = await wc.spawn('node', ['myIndex.js']);
+
+            // Pipe stdout
+            proc.output.pipeTo(new WritableStream({
+                write(data) { log("> " + data); }
             }));
 
-            // Wait for the process to finish
-            const myExitCode = await myProcess.exit;
-            myTerminal.innerText += `\n\nProcess finished with exit code: ${myExitCode}`;
+            // Pipe stderr
+            proc.stderr.pipeTo(new WritableStream({
+                write(data) { log("ERR: " + data); }
+            }));
 
-        } catch (myErr) {
-            myTerminal.innerText += `\nError: ${myErr.message}\nNote: Make sure COOP/COEP headers are enabled!`;
+            // Wait for exit
+            const exitCode = await proc.exit;
+            log(`Process finished with exit code: ${exitCode}`);
+
+        } catch (err) {
+            log("Error: " + err.message);
+            log("Note: COOP/COEP headers are required for WebContainers.");
         } finally {
-            myBtn.disabled = false;
+            btn.disabled = false;
         }
     }
 
-    // Export to global so button can see it
     window.myRunNodeContainer = myRunNodeContainer;
 </script>
 
