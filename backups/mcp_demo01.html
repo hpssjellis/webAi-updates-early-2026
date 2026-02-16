@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>My WebMCP AI-Agent Page</title>
+    <style>
+        body { font-family: system-ui; padding: 20px; line-height: 1.6; max-width: 800px; margin: auto; transition: background 0.5s; }
+        .myCard { border: 2px solid #ddd; padding: 15px; border-radius: 8px; margin-bottom: 10px; background: white; }
+        #myCounterDisplay { font-size: 2em; font-weight: bold; color: #007bff; }
+        .myStatus { color: green; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1>WebMCP AI-Agent Playground</h1>
+    <p>If you are using an AI Agent browser, it can "see" these tools directly!</p>
+
+    <div class="myCard">
+        <h3>1. Visitor Counter</h3>
+        <p>Total AI-requested pings: <span id="myCounterDisplay">0</span></p>
+    </div>
+
+    <div id="myOutputSection" class="myCard">
+        <h3>AI Agent Feedback</h3>
+        <p id="myAgentMessage">Waiting for an agent to take action...</p>
+    </div>
+
+    <script>
+        let myVisitorCount = 0;
+
+async function myInitializeWebMCP() {
+    if (!navigator.modelContext) return;
+
+    await navigator.modelContext.registerTool({
+        name: "myCountVisitor",
+        description: "Increments the visitor counter.",
+        // 2026 Requirement: Define an empty schema so the AI knows no args are needed
+        inputSchema: { type: "object", properties: {} }, 
+        execute: async () => {
+            myVisitorCount++; // Ensure this variable is defined globally in your script
+            document.getElementById('myCounterDisplay').innerText = myVisitorCount;
+            
+            // Helpful for debugging: update the message area too
+            document.getElementById('myAgentMessage').innerText = "AI triggered the counter!";
+            
+            return { content: [{ type: "text", text: `Counter is now ${myVisitorCount}` }] };
+        }
+    });
+}
+
+            // --- TOOL 1: VISITOR COUNTER ---
+            await navigator.modelContext.registerTool({
+                name: "myCountVisitor",
+                description: "Increments the visitor counter and returns the new total.",
+                execute: async () => {
+                    myVisitorCount++;
+                    document.getElementById('myCounterDisplay').innerText = myVisitorCount;
+                    // Standard 2026 Return Format
+                    return { 
+                        content: [{ type: "text", text: `Success! New count is ${myVisitorCount}` }] 
+                    };
+                }
+            });
+
+            // --- TOOL 2: THEME CHANGER ---
+            await navigator.modelContext.registerTool({
+                name: "mySetTheme",
+                description: "Changes the page background color. Input: 'color' (string)",
+                execute: async (myParams) => {
+                    const myColor = myParams.color || "white";
+                    document.body.style.background = myColor;
+                    return { 
+                        content: [{ type: "text", text: `Background changed to ${myColor}` }] 
+                    };
+                }
+            });
+
+            // --- TOOL 3: PAGE PURPOSE ---
+            await navigator.modelContext.registerTool({
+                name: "myGetPagePurpose",
+                description: "Returns an explanation of what this site is for.",
+                execute: async () => {
+                    return { 
+                        content: [{ type: "text", text: "This site teaches students how WebMCP works in 2026!" }] 
+                    };
+                }
+            });
+
+            // --- TOOL 4: AGENT MESSAGE ---
+            await navigator.modelContext.registerTool({
+                name: "myShowMessage",
+                description: "Displays a message from the agent. Input: 'message' (string)",
+                execute: async (myParams) => {
+                    const myMsg = myParams.message || "No message provided.";
+                    document.getElementById('myAgentMessage').innerText = "AI says: " + myMsg;
+                    return { 
+                        content: [{ type: "text", text: "Message posted to the dashboard." }] 
+                    };
+                }
+            });
+
+            console.log("WebMCP Tools Registered Successfully!");
+        }
+
+        myInitializeWebMCP();
+    </script>
+</body>
+</html>
