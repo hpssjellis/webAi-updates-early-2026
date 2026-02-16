@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>My Node.js Browser Container</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            padding: 30px;
+            background: #eceff1;
+        }
+        #myApp {
+            max-width: 700px;
+            margin: auto;
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid #cfd8dc;
+        }
+        #myTerminal {
+            background: #263238;
+            color: #80cbc4;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: monospace;
+            height: 180px;
+            overflow-y: auto;
+            margin-top: 15px;
+            white-space: pre-wrap;
+        }
+        .myButton {
+            background: #4caf50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .myButton:disabled {
+            background: #b0bec5;
+        }
+    </style>
+</head>
+<body>
+
+<div id="myApp">
+    <h2>Node.js in a Browser Container</h2>
+    <p>This demo boots a virtual Node.js environment (via WebContainers) and runs a script inside it.</p>
+
+    <button id="myBtn" class="myButton" onclick="myRunNodeContainer()">Boot & Run Node.js</button>
+
+    <div id="myTerminal">System: Ready to boot container...</div>
+</div>
+
+<script type="module" src="webcontainer.js"></script>
+<script src="bridge.js"></script>
+
+</body>
+</html>
