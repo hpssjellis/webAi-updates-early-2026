@@ -1,0 +1,38 @@
+<script type="module">
+    import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0/dist/transformers.min.js";
+
+    async function myStartDetection() {
+        const myStatus = document.getElementById('myStatus');
+        const myButton = document.getElementById('myRunButton');
+        const myImage = document.getElementById('myImage');
+
+        myButton.disabled = true;
+        myStatus.innerText = "Loading YOLOv8 model (this may take a moment)...";
+
+        try {
+            // v4 pipeline call
+            const myDetector = await pipeline(
+                "object-detection",
+                "Xenova/yolov8n"
+            );
+
+            myStatus.innerText = "Model loaded! Analyzing image...";
+
+            // v4 inference call (same as v3)
+            const myResults = await myDetector(myImage.src);
+
+            myStatus.innerText = "Detection complete! Check the console.";
+            console.log("AI Results:", myResults);
+
+            alert(`Found ${myResults.length} objects!\nFirst object: ${myResults[0].label}`);
+
+        } catch (err) {
+            myStatus.innerText = "Error: " + err.message;
+            console.error(err);
+        } finally {
+            myButton.disabled = false;
+        }
+    }
+
+    window.myStartDetection = myStartDetection;
+</script>
