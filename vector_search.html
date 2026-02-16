@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>My Student Vector Search</title>
+    <title>My Student Vector Search (v4)</title>
     <style>
         body { font-family: sans-serif; text-align: center; padding: 20px; background: #fdfdfd; }
         #myContainer { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 10px; border: 1px solid #ddd; }
@@ -14,10 +14,11 @@
 <body>
 
 <div id="myContainer">
-    <h2>Semantic Search</h2>
-    <p>Search for concepts (try "yellow fruit" or "healthy snack")</p>
+    <h2>Semantic Search (Transformers.js v4)</h2>
+    <p>Try searching for “yellow fruit” or “healthy snack”</p>
     
-    <input type="text" id="myQueryInput" placeholder="Type your search here..." onkeyup="if(event.key==='Enter') myPerformSearch()">
+    <input type="text" id="myQueryInput" placeholder="Type your search here..." 
+           onkeyup="if(event.key==='Enter') myPerformSearch()">
     <button onclick="myPerformSearch()">Search Meaning</button>
     
     <div id="myStatus" style="margin-top:10px; font-size: 0.9em; color: blue;">Model ready.</div>
@@ -25,9 +26,8 @@
 </div>
 
 <script type="module">
-    import { pipeline, cos_sim } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0';
+    import { pipeline, cos_sim } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers";
 
-    // Our sample "database" of items
     const myData = [
         "A sweet yellow banana",
         "A crunchy red apple",
@@ -42,17 +42,28 @@
 
     async function myInitVectorSearch() {
         const myStatus = document.getElementById('myStatus');
-        myStatus.innerText = "Loading AI Brain (MiniLM)...";
+        myStatus.innerText = "Loading MiniLM (v4)...";
 
-        // 1. Load the 'feature-extraction' pipeline
-        myExtractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+        // Load pipeline
+        myExtractor = await pipeline(
+            "feature-extraction",
+            "Xenova/all-MiniLM-L6-v2"
+        );
 
-        // 2. Pre-calculate embeddings for our database
         myStatus.innerText = "Indexing database...";
-        for (const myText of myData) {
-            const myOutput = await myExtractor(myText, { pooling: 'mean', normalize: true });
-            myDatabaseEmbeddings.push({ text: myText, vector: myOutput.data });
+
+        for (const text of myData) {
+            const output = await myExtractor(text, {
+                pooling: "mean",
+                normalize: true
+            });
+
+            // v4 returns nested arrays → flatten
+            const vector = new Float32Array(output[0].data);
+
+            myDatabaseEmbeddings.push({ text, vector });
         }
+
         myStatus.innerText = "Ready to search!";
     }
 
@@ -61,27 +72,32 @@
         const myResultsDiv = document.getElementById('myResultsList');
         if (!myQuery) return;
 
-        // 3. Turn the user's query into a vector
-        const myQueryOutput = await myExtractor(myQuery, { pooling: 'mean', normalize: true });
-        const myQueryVector = myQueryOutput.data;
+        myResultsDiv.innerHTML = "<div>Searching...</div>";
 
-        // 4. Calculate similarity and sort
-        const myScoredResults = myDatabaseEmbeddings.map(myItem => ({
-            text: myItem.text,
-            score: cos_sim(myQueryVector, myItem.vector)
-        })).sort((a, b) => b.score - a.score);
+        const output = await myExtractor(myQuery, {
+            pooling: "mean",
+            normalize: true
+        });
 
-        // 5. Display the top results
+        const queryVector = new Float32Array(output[0].data);
+
+        const scored = myDatabaseEmbeddings
+            .map(item => ({
+                text: item.text,
+                score: cos_sim(queryVector, item.vector)
+            }))
+            .sort((a, b) => b.score - a.score);
+
         myResultsDiv.innerHTML = "";
-        myScoredResults.slice(0, 3).forEach(res => {
+        scored.slice(0, 3).forEach(res => {
             myResultsDiv.innerHTML += `
                 <div class="myResultItem">
-                    ${res.text} <span class="myScore">${(res.score * 100).toFixed(1)}% match</span>
+                    ${res.text}
+                    <span class="myScore">${(res.score * 100).toFixed(1)}% match</span>
                 </div>`;
         });
     }
 
-    // Attach functions to window for onclick access
     window.myPerformSearch = myPerformSearch;
     myInitVectorSearch();
 </script>
