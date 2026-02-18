@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Instant Interpreter (Whisper + NLLB)</title>
+    <style>
+        :root { --accent: #00ff88; --bg: #0d1117; --card: #161b22; }
+        body { background: var(--bg); color: #c9d1d9; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .container { background: var(--card); border-radius: 15px; padding: 25px; width: 100%; max-width: 700px; border: 1px solid #30363d; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+        h1 { color: var(--accent); text-align: center; margin-bottom: 10px; font-size: 1.5rem; }
+        .status { font-size: 0.85rem; color: #8b949e; margin-bottom: 15px; text-align: center; font-family: monospace; background: #000; padding: 10px; border-radius: 5px; }
+        
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 15px; }
+        label { font-size: 0.8rem; font-weight: bold; display: block; margin-bottom: 5px; color: var(--accent); }
+        
+        textarea { background: #0d1117; border: 1px solid #30363d; color: #fff; padding: 12px; border-radius: 8px; width: 100%; box-sizing: border-box; height: 120px; font-size: 1rem; resize: none; }
+        
+        button { background: var(--accent); border: none; padding: 12px; border-radius: 8px; color: #000; font-weight: bold; cursor: pointer; transition: 0.2s; width: 100%; margin-top: 10px; }
+        button:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+        button.recording { background: #f85149; color: white; animation: pulse 1.5s infinite; }
+        
+        select { background: #0d1117; color: white; border: 1px solid #30363d; padding: 8px; border-radius: 5px; width: 100%; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>🌍 Instant Interpreter</h1>
+        <div id="status" class="status">Step 1: Initialize AI Models</div>
+
+        <button id="loadBtn">🚀 Load Whisper & Translation Models (~700MB)</button>
+        
+        <div id="ui" style="display: none;">
+            <div class="grid">
+                <div>
+                    <label>English (Detected)</label>
+                    <textarea id="engText" readonly placeholder="Listening..."></textarea>
+                </div>
+                <div>
+                    <label>Translation (Target)</label>
+                    <textarea id="transText" readonly placeholder="Translating..."></textarea>
+                </div>
+            </div>
+
+            <div class="grid" style="align-items: end;">
+                <div>
+                    <label>Target Language:</label>
+                    <select id="langSelect">
+                        <option value="spa_Latn">Spanish</option>
+                        <option value="fra_Latn">French</option>
+                        <option value="deu_Latn">German</option>
+                        <option value="zho_Hans">Chinese (Simplified)</option>
+                        <option value="jpn_Jpan">Japanese</option>
+                    </select>
+                </div>
+                <button id="recordBtn">🎤 Start Interpreting</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0";
+
+        let asr, translator;
+        let recorder, audioChunks = [], isListening = false, intervalId;
+
+        const statusEl = document.getElementById('status');
+        const loadBtn = document.getElementById('loadBtn');
+        const recordBtn = document.getElementById('recordBtn');
+        const engArea = document.getElementById('engText');
+        const transArea = document.getElementById('transText');
+        const langSelect = document.getElementById('langSelect');
+
+        // 1. Initialize Pipelines
+        loadBtn.onclick = async () => {
+            loadBtn.disabled = true;
+            statusEl.textContent = "⏳ Loading Whisper (ASR)...";
+            asr = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en', { device: 'webgpu' });
+            
+            statusEl.textContent = "⏳ Loading NLLB-200 (Translation)...";
+            translator = await pipeline('translation', 'Xenova/nllb-200-distilled-600M');
+            
+            statusEl.textContent = "✅ Both Engines Ready.";
+            loadBtn.style.display = 'none';
+            document.getElementById('ui').style.display = 'block';
+        };
+
+        // 2. Continuous Processing Loop
+        async function runCycle() {
+            if (audioChunks.length === 0) return;
+
+            const blob = new Blob(audioChunks, { type: 'audio/wav' });
+            audioChunks = [];
+
+            const ctx = new AudioContext({ sampleRate: 16000 });
+            const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+            const audioData = decoded.getChannelData(0);
+
+            // A. Transcribe (Speech to English Text)
+            statusEl.textContent = "⚙️ Transcribing...";
+            const res = await asr(audioData);
+            const text = res.text.trim();
+
+            if (text.length > 2) {
+                engArea.value = text;
+                
+                // B. Translate (English to Target Language)
+                statusEl.textContent = "⚙️ Translating...";
+                const translation = await translator(text, {
+                    src_lang: 'eng_Latn',
+                    tgt_lang: langSelect.value,
+                });
+                
+                const translatedText = translation[0].translation_text;
+                transArea.value = translatedText;
+
+                // C. Speak (TTS)
+                const utterance = new SpeechSynthesisUtterance(translatedText);
+                utterance.lang = langSelect.value.split('_')[0]; // Simple lang code mapping
+                window.speechSynthesis.speak(utterance);
+            }
+            statusEl.textContent = "🔴 Listening for speech...";
+        }
+
+        recordBtn.onclick = async () => {
+            if (isListening) {
+                isListening = false;
+                clearInterval(intervalId);
+                recorder.stop();
+                recordBtn.textContent = "🎤 Start Interpreting";
+                recordBtn.classList.remove('recording');
+                return;
+            }
+
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            recorder = new MediaRecorder(stream);
+            isListening = true;
+            
+            recorder.ondataavailable = e => audioChunks.push(e.data);
+            
+            // Cycle every 4 seconds to give the translation model room to breathe
+            intervalId = setInterval(() => {
+                recorder.stop();
+                recorder.start();
+                runCycle();
+            }, 4000);
+
+            recorder.start();
+            recordBtn.textContent = "🛑 Stop Interpreter";
+            recordBtn.classList.add('recording');
+            statusEl.textContent = "🔴 Listening...";
+        };
+    </script>
+</body>
+</html>
