@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Transformers.js v4 Simplified Guide</title>
+</head>
+<body style="font-family: sans-serif; line-height: 1.6; padding: 20px; color: #333; max-width: 800px; margin: auto; background: #f9f9f9;">
+
+    <h1 style="color: #222; border-bottom: 2px solid #ddd;">Transformers.js v4 Simplified Examples</h1>
+    <p>This page demonstrates the core functions of the <code>@huggingface/transformers</code> library using <strong>v4.0.0-next.3</strong>.</p>
+
+    <div id="myOutputSection" style="background: #fff; border: 1px solid #ccc; padding: 15px; border-radius: 8px; min-height: 50px; margin-bottom: 20px; white-space: pre-wrap; font-family: monospace; font-size: 0.9em;">
+Click a button below to see the code and results...
+    </div>
+
+    <section style="margin-bottom: 30px;">
+        <h2 style="color: #444;">1. The Pipeline API (The Easiest Way)</h2>
+        <p>The <code>pipeline()</code> function is a "helper" that combines a model and a tokenizer into one object.</p>
+        <button onclick="myRunSentimentAnalysis()" style="padding: 10px; cursor: pointer;">Run Sentiment Analysis</button>
+    </section>
+
+    <section style="margin-bottom: 30px;">
+        <h2 style="color: #444;">2. Auto-Classes (Lower Level)</h2>
+        <p>Use <code>AutoTokenizer</code> and <code>AutoModel</code> if you need to process data manually before the model sees it.</p>
+        <button onclick="myRunTokenization()" style="padding: 10px; cursor: pointer;">Run Manual Tokenization</button>
+    </section>
+
+    <section style="margin-bottom: 30px;">
+        <h2 style="color: #444;">3. Handling Data</h2>
+        <p>Transformers uses its own <code>Tensor</code> class to handle multi-dimensional math arrays.</p>
+        <button onclick="myCreateTensor()" style="padding: 10px; cursor: pointer;">Create a Raw Tensor</button>
+    </section>
+
+    <script type="module">
+        // Importing the main functions from the specific CDN provided
+        import { 
+            pipeline, 
+            AutoTokenizer, 
+            AutoModel, 
+            Tensor,
+            env 
+        } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.3';
+
+        // We can configure the environment (env) globally
+        env.allowLocalModels = false; // Force using the web/CDN models
+
+        const myOutputDisplay = document.getElementById('myOutputSection');
+
+        // EXAMPLE 1: Using the pipeline function
+        window.myRunSentimentAnalysis = async function() {
+            myOutputDisplay.innerText = "Loading model... (this may take a moment)";
+            try {
+                // 'sentiment-analysis' is a high-level task name
+                const myClassifier = await pipeline('sentiment-analysis');
+                const myResult = await myClassifier('I love using new web technologies!');
+                
+                myOutputDisplay.innerText = "Code:\n" +
+                    "const myClassifier = await pipeline('sentiment-analysis');\n" +
+                    "const myResult = await myClassifier('I love using new web technologies!');\n\n" +
+                    "Result:\n" + JSON.stringify(myResult, null, 2);
+            } catch (myError) {
+                myOutputDisplay.innerText = "Error: " + myError.message;
+            }
+        };
+
+        // EXAMPLE 2: Manual Tokenization
+        window.myRunTokenization = async function() {
+            myOutputDisplay.innerText = "Loading tokenizer...";
+            try {
+                const myTokenizer = await AutoTokenizer.from_pretrained('Xenova/bert-base-uncased');
+                const myText = "Hello, how are you?";
+                const myTokenIds = await myTokenizer(myText);
+
+                myOutputDisplay.innerText = "Code:\n" +
+                    "const myTokenizer = await AutoTokenizer.from_pretrained('bert-base-uncased');\n" +
+                    "const myTokenIds = await myTokenizer('Hello, how are you?');\n\n" +
+                    "Result (Input IDs and Attention Mask):\n" + JSON.stringify(myTokenIds, (k, v) => typeof v === 'bigint' ? v.toString() : v, 2);
+            } catch (myError) {
+                myOutputDisplay.innerText = "Error: " + myError.message;
+            }
+        };
+
+        // EXAMPLE 3: Creating a Tensor
+        window.myCreateTensor = async function() {
+            // A Tensor is essentially a typed array with a shape
+            const myData = new Float32Array([1, 2, 3, 4]);
+            const myShape = [2, 2];
+            const myNewTensor = new Tensor('float32', myData, myShape);
+
+            myOutputDisplay.innerText = "Code:\n" +
+                "const myData = new Float32Array([1, 2, 3, 4]);\n" +
+                "const myNewTensor = new Tensor('float32', myData, [2, 2]);\n\n" +
+                "Resulting Tensor object:\n" +
+                "Type: " + myNewTensor.type + "\n" +
+                "Shape: " + JSON.stringify(myNewTensor.dims) + "\n" +
+                "Data: " + myNewTensor.data;
+        };
+
+    </script>
+</body>
+</html>
