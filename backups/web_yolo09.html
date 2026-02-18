@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Live YOLO Detection</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: #0d0d0d;
+            color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 24px 16px;
+            min-height: 100vh;
+        }
+
+        h2 {
+            color: #00ffcc;
+            font-size: 1.4rem;
+            letter-spacing: 1px;
+            margin-bottom: 16px;
+        }
+
+        /* ── Video + overlay wrapper ────────────────────────────────── */
+        #myViewport {
+            position: relative;
+            width: 480px;
+            height: 360px;
+            background: #000;
+            border: 2px solid #222;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        #myCam {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        #myDraw {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        /* ── Stats overlay ───────────────────────────────────────────── */
+        #myStats {
+            position: absolute;
+            top: 6px;
+            left: 6px;
+            font-family: monospace;
+            font-size: 11px;
+            color: #00ffcc;
+            background: rgba(0,0,0,0.55);
+            padding: 3px 8px;
+            border-radius: 4px;
+            pointer-events: none;
+        }
+
+        /* ── Controls ────────────────────────────────────────────────── */
+        #myControls {
+            margin-top: 14px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        button {
+            padding: 9px 22px;
+            font-size: 0.95rem;
+            font-weight: bold;
+            cursor: pointer;
+            background: #00ffcc;
+            color: #000;
+            border: none;
+            border-radius: 5px;
+            transition: opacity 0.2s;
+        }
+        button:disabled { opacity: 0.4; cursor: default; }
+
+        label { font-size: 0.85rem; color: #aaa; display: flex; align-items: center; gap: 6px; }
+
+        select, input[type=range] {
+            background: #1e1e1e;
+            color: #eee;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 4px 6px;
+            font-size: 0.85rem;
+        }
+
+        /* ── Status + device badge ───────────────────────────────────── */
+        #myStatus {
+            margin-top: 12px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #888;
+            max-width: 520px;
+            text-align: center;
+        }
+
+        #myDeviceBadge {
+            margin-top: 6px;
+            font-size: 0.78rem;
+            color: #555;
+        }
+        #myDeviceBadge span {
+            padding: 2px 9px;
+            border-radius: 10px;
+            font-weight: bold;
+        }
+        .badge-webgpu { background: #0d2e20; color: #00ffcc; }
+        .badge-wasm   { background: #2a2a10; color: #ffcc00; }
+    </style>
+</head>
+<body>
+
+    <h2>⚡ Live YOLO Detection — Transformers.js v4</h2>
+
+    <div id="myViewport">
+        <video id="myCam" autoplay playsinline muted></video>
+        <canvas id="myDraw" width="480" height="360"></canvas>
+        <div id="myStats">—</div>
+    </div>
+
+    <div id="myControls">
+        <button id="myGoButton" onclick="window.myStartApp()">▶ Start Camera &amp; AI</button>
+
+        <label>
+            Threshold:
+            <input id="myThresh" type="range" min="10" max="90" value="40" step="5"
+                   oninput="document.getElementById('myThreshVal').textContent = this.value + '%'">
+            <span id="myThreshVal">40%</span>
+        </label>
+
+        <label>
+            Model:
+            <select id="myModelSel">
+                <option value="Xenova/yolos-tiny"    selected>yolos-tiny  (~25 MB, fastest)</option>
+                <option value="Xenova/yolos-small"           >yolos-small (~50 MB)</option>
+                <option value="Xenova/detr-resnet-50"        >detr-resnet-50 (~160 MB, best accuracy)</option>
+            </select>
+        </label>
+    </div>
+
+    <div id="myStatus">Ready — click ▶ to begin.</div>
+    <div id="myDeviceBadge"></div>
+    <div id="myObjectLog" style="margin-top: 20px; color: #00ffcc; font-family: monospace; background: #1a1a1a; padding: 10px; border-radius: 5px; width: 480px; text-align: left; min-height: 50px; border: 1px solid #333;">
+    Detected: (waiting...)
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────────────────── -->
+    <script type="module">
+
+        import { pipeline, env, RawImage }
+            from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
+
+        // ── Env config ─────────────────────────────────────────────────────
+        env.allowLocalModels = false;
+        env.useBrowserCache  = true;  // cache in IndexedDB → instant on reload
+
+        // ── DOM refs ───────────────────────────────────────────────────────
+        const myCam      = document.getElementById("myCam");
+        const myDraw     = document.getElementById("myDraw");
+        const myCtx      = myDraw.getContext("2d");
+        const myStats    = document.getElementById("myStats");
+        const myStatus   = document.getElementById("myStatus");
+        const myBtn      = document.getElementById("myGoButton");
+        const myThresh   = document.getElementById("myThresh");
+        const myModelSel = document.getElementById("myModelSel");
+        const myBadge    = document.getElementById("myDeviceBadge");
+
+        // ── Offscreen snap canvas ──────────────────────────────────────────
+        // Smaller than the display canvas — yolos-tiny resizes to 512px anyway
+        // so 320x240 costs less getImageData overhead with no accuracy loss.
+        const mySnap    = document.createElement("canvas");
+        mySnap.width    = 320;
+        mySnap.height   = 240;
+        // willReadFrequently: true → browser uses CPU-optimised path for getImageData
+        const mySnapCtx = mySnap.getContext("2d", { willReadFrequently: true });
+
+        // ── State ──────────────────────────────────────────────────────────
+        let myDetector  = null;
+        let myIsRunning = false;
+        let myLastBoxes = [];      // most recent completed detection results
+        let myInferring = false;   // true while an inference promise is in-flight
+
+        // FPS counters
+        let myDrawCount  = 0;
+        let myInferCount = 0;
+        let myFpsTick    = performance.now();
+
+        // ── Utility ────────────────────────────────────────────────────────
+        const setStatus = msg => { myStatus.textContent = msg; };
+
+        function showBadge(device) {
+            const isGpu = device === "webgpu";
+            myBadge.innerHTML = `Running on: <span class="${isGpu ? 'badge-webgpu' : 'badge-wasm'}">${
+                isGpu ? "🚀 WebGPU" : "🐢 WASM (CPU)"
+            }</span>`;
+        }
+
+        // ── Camera start ───────────────────────────────────────────────────
+        async function startCam() {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { width: 480, height: 360, facingMode: "environment" }
+            });
+            myCam.srcObject = stream;
+            return new Promise(resolve => { myCam.onloadedmetadata = resolve; });
+        }
+
+        // ── Draw last known boxes at canvas resolution ─────────────────────
+        // This runs every requestAnimationFrame (~60 fps) regardless of how
+        // fast inference is completing.
+        function drawBoxes() {
+            myCtx.clearRect(0, 0, myDraw.width, myDraw.height);
+
+            const thresh = myThresh.value / 100;
+
+            myLastBoxes.forEach(obj => {
+                if (obj.score < thresh) return;
+
+                let { xmin, ymin, xmax, ymax } = obj.box;
+
+                // Normalise coords to overlay canvas pixels.
+                //   percentage:true → 0-100 → divide by 100 then multiply by canvas size
+                //   fraction        → 0-1   → multiply by canvas size
+                //   raw pixels      → >100  → divide by model input size (512 for yolos)
+                let sx, sy;
+                if (xmax <= 1.0 && ymax <= 1.0) {
+                    sx = myDraw.width;
+                    sy = myDraw.height;
+                } else if (xmax <= 100 && ymax <= 100) {
+                    sx = myDraw.width  / 100;
+                    sy = myDraw.height / 100;
+                } else {
+                    // Raw pixel space from model input — yolos-tiny uses 512px
+                    sx = myDraw.width  / 512;
+                    sy = myDraw.height / 512;
+                }
+
+                const x = xmin * sx;
+                const y = ymin * sy;
+                const w = (xmax - xmin) * sx;
+                const h = (ymax - ymin) * sy;
+
+                // Unique colour per label via hue hash
+                const hue = [...obj.label].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
+                const col = `hsl(${hue},100%,60%)`;
+
+                // Filled box (subtle)
+                myCtx.fillStyle = `hsla(${hue},100%,60%,0.08)`;
+                myCtx.fillRect(x, y, w, h);
+
+                // Box outline
+                myCtx.strokeStyle = col;
+                myCtx.lineWidth   = 2;
+                myCtx.strokeRect(x, y, w, h);
+
+                // Label background + text
+                const label = `${obj.label}  ${Math.round(obj.score * 100)}%`;
+                myCtx.font   = "bold 13px Arial";
+                const tw     = myCtx.measureText(label).width;
+                const ty     = y > 22 ? y - 4 : y + h + 18;
+
+                myCtx.fillStyle = "rgba(0,0,0,0.65)";
+                myCtx.fillRect(x - 1, ty - 15, tw + 10, 19);
+
+                myCtx.fillStyle = col;
+                myCtx.fillText(label, x + 4, ty);
+            });
+        }
+
+        // ── Fire one inference in the background ───────────────────────────
+        // We snapshot the video, hand off to the model, and update myLastBoxes
+        // when it resolves — without ever blocking the render loop.
+
+function fireInference() {
+    if (myInferring || !myDetector) return;
+    myInferring = true;
+
+    mySnapCtx.drawImage(myCam, 0, 0, mySnap.width, mySnap.height);
+
+    let frame;
+    try {
+        frame = RawImage.fromCanvas(mySnap);
+    } catch (err) {
+        console.error("RawImage error:", err);
+        myInferring = false;
+        return;
+    }
+
+    myDetector(frame, {
+            threshold: 0.15,
+            percentage: true
+        })
+        .then(results => {
+            myLastBoxes = results;
+            myInferCount++;
+            myInferring = false;
+
+            // --- NEW LOGGING CODE ---
+            const logDiv = document.getElementById("myObjectLog");
+            const thresh = myThresh.value / 100;
+
+            // Filter results by current threshold and count occurrences
+            const counts = {};
+            results.forEach(obj => {
+                if (obj.score >= thresh) {
+                    counts[obj.label] = (counts[obj.label] || 0) + 1;
+                }
+            });
+
+            // Format the counts into a string: "person (2), chair (1)"
+            const labelStrings = Object.entries(counts).map(([label, count]) => {
+                return `${label}${count > 1 ? ' (x' + count + ')' : ''}`;
+            });
+
+            if (labelStrings.length > 0) {
+                logDiv.innerText = "Detected: " + labelStrings.join(", ");
+            } else {
+                logDiv.innerText = "Detected: nothing";
+            }
+            // ------------------------
+
+        })
+        .catch(err => {
+            console.error("Inference error:", err);
+            myInferring = false;
+        });
+}
+
+        
+        /*
+        function fireInference() {
+            if (myInferring || !myDetector) return;
+            myInferring = true;
+
+            mySnapCtx.drawImage(myCam, 0, 0, mySnap.width, mySnap.height);
+
+            // RawImage.fromCanvas is SYNCHRONOUS in v4 — no .then()
+            let frame;
+            try {
+                frame = RawImage.fromCanvas(mySnap);
+            } catch (err) {
+                console.error("RawImage error:", err);
+                myInferring = false;
+                return;
+            }
+
+            myDetector(frame, {
+                    threshold:  0.15,   // keep low — visible threshold set by slider at draw time
+                    percentage: true
+                })
+                .then(results => {
+                    myLastBoxes = results;
+                    myInferCount++;
+                    myInferring = false;
+                })
+                .catch(err => {
+                    console.error("Inference error:", err);
+                    myInferring = false;
+                });
+        }
+
+        */
+
+        // ── Main render loop — 60 fps, never awaited ───────────────────────
+        // Key design: requestAnimationFrame is called synchronously at the END
+        // of every frame with no await, so the loop always runs at display
+        // refresh rate. Inference fires in parallel via Promise chains.
+        function renderLoop() {
+            if (!myIsRunning) return;
+
+            drawBoxes();       // always draws last known results — smooth 60fps
+            fireInference();   // starts a new inference only if previous finished
+
+            // Update FPS counter once per second
+            myDrawCount++;
+            const now = performance.now();
+            if (now - myFpsTick >= 1000) {
+                myStats.textContent =
+                    `render: ${myDrawCount} fps  |  infer: ${myInferCount} fps  |  objects: ${myLastBoxes.length}`;
+                myDrawCount  = 0;
+                myInferCount = 0;
+                myFpsTick    = now;
+            }
+
+            requestAnimationFrame(renderLoop);  // ← sync, never awaited → true 60fps
+        }
+
+        // ── Load (or reload) the model ─────────────────────────────────────
+        async function loadModel(modelId) {
+            myBtn.disabled      = true;
+            myModelSel.disabled = true;
+            setStatus(`⬇️  Loading ${modelId}…`);
+
+            // Detect WebGPU support
+            let device = "wasm";
+            if (navigator.gpu) {
+                try {
+                    const adapter = await navigator.gpu.requestAdapter();
+                    if (adapter) device = "webgpu";
+                } catch (_) { /* no WebGPU */ }
+            }
+
+            try {
+                myDetector = await pipeline("object-detection", modelId, {
+                    device,
+                    progress_callback: p => {
+                        if (p.status === "progress" && p.total) {
+                            const pct = Math.round((p.loaded / p.total) * 100);
+                            setStatus(`⬇️  Downloading: ${pct}%  (${modelId})`);
+                        }
+                    }
+                });
+            } catch (e) {
+                // WebGPU failed — retry with wasm
+                if (device === "webgpu") {
+                    console.warn("WebGPU init failed, falling back to WASM:", e);
+                    device = "wasm";
+                    myDetector = await pipeline("object-detection", modelId, {
+                        device: "wasm",
+                        progress_callback: p => {
+                            if (p.status === "progress" && p.total) {
+                                const pct = Math.round((p.loaded / p.total) * 100);
+                                setStatus(`⬇️  Downloading: ${pct}%  (${modelId})`);
+                            }
+                        }
+                    });
+                } else {
+                    throw e;
+                }
+            }
+
+            showBadge(device);
+            setStatus(`🟢 Active — ${modelId}  [${device.toUpperCase()}]`);
+            myModelSel.disabled = false;
+            myBtn.style.display = "none";
+            myIsRunning         = true;
+            myFpsTick           = performance.now();
+            renderLoop();
+        }
+
+        // ── Entry point ────────────────────────────────────────────────────
+        window.myStartApp = async function () {
+            myBtn.disabled = true;
+            setStatus("📷 Requesting camera…");
+
+            try {
+                await startCam();
+            } catch (e) {
+                setStatus("❌ Camera error: " + e.message);
+                myBtn.disabled = false;
+                return;
+            }
+
+            await loadModel(myModelSel.value).catch(e => {
+                setStatus("❌ Model failed: " + e.message);
+                console.error(e);
+                myBtn.disabled = false;
+            });
+        };
+
+        // ── Hot-swap model from the dropdown ───────────────────────────────
+        myModelSel.addEventListener("change", async () => {
+            if (!myIsRunning) return;
+
+            myIsRunning = false;
+            myDetector  = null;
+            myLastBoxes = [];
+            myCtx.clearRect(0, 0, myDraw.width, myDraw.height);
+
+            await loadModel(myModelSel.value).catch(e => {
+                setStatus("❌ Model swap failed: " + e.message);
+                console.error(e);
+            });
+        });
+
+    </script>
+</body>
+</html>
