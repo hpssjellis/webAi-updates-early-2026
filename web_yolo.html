@@ -152,9 +152,6 @@
 
     <div id="myStatus">Ready — click ▶ to begin.</div>
     <div id="myDeviceBadge"></div>
-    <div id="myObjectLog" style="margin-top: 20px; color: #00ffcc; font-family: monospace; background: #1a1a1a; padding: 10px; border-radius: 5px; width: 480px; text-align: left; min-height: 50px; border: 1px solid #333;">
-    Detected: (waiting...)
-   </div>
 
     <!-- ─────────────────────────────────────────────────────────────────── -->
     <script type="module">
@@ -281,6 +278,7 @@
         // ── Fire one inference in the background ───────────────────────────
         // We snapshot the video, hand off to the model, and update myLastBoxes
         // when it resolves — without ever blocking the render loop.
+
 function fireInference() {
     if (myInferring || !myDetector) return;
     myInferring = true;
@@ -334,7 +332,42 @@ function fireInference() {
             console.error("Inference error:", err);
             myInferring = false;
         });
-}}
+}
+
+        
+        /*
+        function fireInference() {
+            if (myInferring || !myDetector) return;
+            myInferring = true;
+
+            mySnapCtx.drawImage(myCam, 0, 0, mySnap.width, mySnap.height);
+
+            // RawImage.fromCanvas is SYNCHRONOUS in v4 — no .then()
+            let frame;
+            try {
+                frame = RawImage.fromCanvas(mySnap);
+            } catch (err) {
+                console.error("RawImage error:", err);
+                myInferring = false;
+                return;
+            }
+
+            myDetector(frame, {
+                    threshold:  0.15,   // keep low — visible threshold set by slider at draw time
+                    percentage: true
+                })
+                .then(results => {
+                    myLastBoxes = results;
+                    myInferCount++;
+                    myInferring = false;
+                })
+                .catch(err => {
+                    console.error("Inference error:", err);
+                    myInferring = false;
+                });
+        }
+
+        */
 
         // ── Main render loop — 60 fps, never awaited ───────────────────────
         // Key design: requestAnimationFrame is called synchronously at the END
