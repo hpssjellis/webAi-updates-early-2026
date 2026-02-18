@@ -2,80 +2,67 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Transformers.js v4 Hub Explorer</title>
+    <title>Transformers.js v4.0.0-next.4 Hub Tool</title>
 </head>
-<body style="font-family: sans-serif; line-height: 1.6; padding: 20px; color: #333; max-width: 900px; margin: auto; background: #f4f4f9;">
+<body style="font-family: sans-serif; line-height: 1.6; padding: 20px; color: #333; max-width: 850px; margin: auto; background: #fff;">
 
-    <h1 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px;">Hugging Face Hub Explorer (v4)</h1>
+    <h2 style="color: #2563eb; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px;">Model Hub Inspector</h2>
     
-    <div style="margin-bottom: 20px;">
-        <label for="myModelInput">Model ID:</label>
-        <input type="text" id="myModelInput" value="Xenova/all-MiniLM-L6-v2" style="padding: 8px; width: 250px;">
-        <button onclick="myExploreModel()" style="padding: 8px 15px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Explore Repository</button>
+    <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+        <label style="font-weight: bold;">Enter Hugging Face Model ID:</label><br>
+        <input type="text" id="myModelInput" value="Xenova/all-MiniLM-L6-v2" style="padding: 10px; width: 70%; border: 1px solid #cbd5e1; border-radius: 5px; margin-top: 10px;">
+        <button onclick="myGetModelInfo()" style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">Inspect Folder</button>
     </div>
 
-    <div id="myStatus" style="font-style: italic; margin-bottom: 10px; color: #666;"></div>
+    <div id="mySummaryBox" style="display: none; margin-bottom: 20px; padding: 15px; background: #ecfdf5; border: 1px solid #10b981; border-radius: 8px;">
+        <strong>Total Repo Size:</strong> <span id="myTotalSize">0</span> MB<br>
+        <strong>Total Files:</strong> <span id="myFileCount">0</span>
+    </div>
 
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-        <div>
-            <h3>File List</h3>
-            <div id="myFileList" style="background: #fff; border: 1px solid #ddd; padding: 10px; height: 300px; overflow-y: auto; border-radius: 5px;"></div>
-        </div>
-        <div>
-            <h3>Metadata & Sizes</h3>
-            <div id="myMetaList" style="background: #fff; border: 1px solid #ddd; padding: 10px; height: 300px; overflow-y: auto; border-radius: 5px;"></div>
-        </div>
+    <div id="myResultsList" style="white-space: pre-wrap; font-family: monospace; background: #1e293b; color: #f8fafc; padding: 15px; border-radius: 8px; font-size: 0.85em; max-height: 400px; overflow-y: auto;">
+        Results will appear here...
     </div>
 
     <script type="module">
-        // Import Hub utilities from the v4 CDN
-        import { 
-            list_repo_files, 
-            get_model_metadata 
-        } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.3';
+        // Using the updated next.4 CDN
+        import { get_model_metadata } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4';
 
-        const myStatus = document.getElementById('myStatus');
-        const myFileListDiv = document.getElementById('myFileList');
-        const myMetaListDiv = document.getElementById('myMetaList');
+        const myResultsDiv = document.getElementById('myResultsList');
+        const mySummary = document.getElementById('mySummaryBox');
 
-        window.myExploreModel = async function() {
-            const myModelId = document.getElementById('myModelInput').value;
-            
-            myStatus.innerText = "Fetching data from Hugging Face...";
-            myFileListDiv.innerHTML = "<em>Loading...</em>";
-            myMetaListDiv.innerHTML = "<em>Loading...</em>";
+        window.myGetModelInfo = async function() {
+            const myModelName = document.getElementById('myModelInput').value;
+            myResultsDiv.innerText = "Fetching folder details...";
+            mySummary.style.display = "none";
 
             try {
-                // 1. List files in the repo
-                const myFiles = await list_repo_files(myModelId);
+                // get_model_metadata returns the full directory info from HF Hub
+                const myData = await get_model_metadata(myModelName);
                 
-                // 2. Get detailed metadata (including sizes)
-                const myMetadata = await get_model_metadata(myModelId);
+                let myTotalBytes = 0;
+                let myFileDetails = "";
 
-                // Display file names
-                myFileListDiv.innerHTML = `<ul style="padding-left: 20px;">${myFiles.map(f => `<li>${f}</li>`).join('')}</ul>`;
-
-                // Display sizes from sibling information in metadata
-                // Note: Metadata contains 'siblings' which are the actual file objects
-                let mySizeHTML = `<table style="width:100%; border-collapse: collapse;">
-                    <tr style="background:#eee;"><th style="text-align:left; padding:5px;">File</th><th style="text-align:right; padding:5px;">Size</th></tr>`;
-                
-                myMetadata.siblings.forEach(myFileObj => {
-                    const mySizeMB = myFileObj.size ? (myFileObj.size / (1024 * 1024)).toFixed(2) + " MB" : "Unknown";
-                    mySizeHTML += `<tr style="border-bottom: 1px solid #eee;">
-                        <td style="padding:5px; font-size:0.85em;">${myFileObj.rfilename}</td>
-                        <td style="padding:5px; text-align:right; font-size:0.85em;">${mySizeMB}</td>
-                    </tr>`;
+                // Each 'sibling' is a file in the repository
+                myData.siblings.forEach(myFile => {
+                    const mySizeMB = myFile.size ? (myFile.size / (1024 * 1024)).toFixed(2) : "0.00";
+                    myTotalBytes += (myFile.size || 0);
+                    
+                    myFileDetails += `📄 ${myFile.rfilename.padEnd(40)} | ${mySizeMB} MB\n`;
                 });
-                mySizeHTML += `</table>`;
-                
-                myMetaListDiv.innerHTML = mySizeHTML;
-                myStatus.innerText = "Ready.";
+
+                // Update the Summary UI
+                document.getElementById('myTotalSize').innerText = (myTotalBytes / (1024 * 1024)).toFixed(2);
+                document.getElementById('myFileCount').innerText = myData.siblings.length;
+                mySummary.style.display = "block";
+
+                // Update the detailed list
+                myResultsDiv.innerText = `Folder Contents for: ${myModelName}\n` + 
+                                       `------------------------------------------------------------\n` +
+                                       myFileDetails;
 
             } catch (myError) {
-                myStatus.innerText = "Error: " + myError.message;
-                myFileListDiv.innerText = "Failed to load.";
-                myMetaListDiv.innerText = "Failed to load.";
+                myResultsDiv.innerText = "Error fetching data: " + myError.message + 
+                    "\n\nMake sure the Model ID is correct (e.g., 'onnx-community/t5-small').";
             }
         };
     </script>
