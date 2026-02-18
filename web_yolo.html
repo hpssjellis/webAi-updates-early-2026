@@ -52,7 +52,8 @@
         const mySnap    = document.createElement("canvas");
         mySnap.width    = 480;
         mySnap.height   = 360;
-        const mySnapCtx = mySnap.getContext("2d");
+        // willReadFrequently: true tells the browser we'll call getImageData often → faster
+        const mySnapCtx = mySnap.getContext("2d", { willReadFrequently: true });
 
         let myDetector  = null;
         let myIsRunning = false;
@@ -93,16 +94,46 @@
                 });
 
                 // 5. Draw boxes and labels
-                myCtx.lineWidth   = 2;
-                myCtx.font        = "bold 14px Arial";
+                myCtx.lineWidth = 2;
+                myCtx.font      = "bold 14px Arial";
+
+                // Log the raw output once so we can inspect the coordinate range
+                if (myResults.length > 0 && !window._debuggedOnce) {
+                    console.log("Raw detection result[0]:", JSON.stringify(myResults[0]));
+                    window._debuggedOnce = true;
+                }
 
                 myResults.forEach(obj => {
-                    const { xmin, ymin, xmax, ymax } = obj.box;
+                    let { xmin, ymin, xmax, ymax } = obj.box;
 
-                    const x = (xmin / 100) * myDraw.width;
-                    const y = (ymin / 100) * myDraw.height;
-                    const w = ((xmax - xmin) / 100) * myDraw.width;
-                    const h = ((ymax - ymin) / 100) * myDraw.height;
+                    // v4 with percentage:true returns 0-100.
+                    // But if values are >1 and <100 treat as percentages,
+                    // if values are <=1 treat as 0-1 fractions,
+                    // if values are >100 treat as raw pixels relative to model input.
+                    let scaleX, scaleY;
+                    if (xmax <= 1.0 && ymax <= 1.0) {
+                        // 0–1 normalised fractions
+                        scaleX = myDraw.width;
+                        scaleY = myDraw.height;
+                    } else if (xmax <= 100 && ymax <= 100) {
+                        // 0–100 percentages
+                        scaleX = myDraw.width  / 100;
+                        scaleY = myDraw.height / 100;
+                    } else {
+                        // Raw pixel coords from model input (yolos-tiny uses 512px input)
+                        // Scale to canvas size
+                        scaleX = myDraw.width  / xmax;  // approximate — log will reveal true range
+                        scaleY = myDraw.height / ymax;
+                        // Better: use the actual model input dimensions from the first box
+                        // We'll use a fixed known value for yolos-tiny: 512x512 typical
+                        scaleX = myDraw.width  / 512;
+                        scaleY = myDraw.height / 512;
+                    }
+
+                    const x = xmin * scaleX;
+                    const y = ymin * scaleY;
+                    const w = (xmax - xmin) * scaleX;
+                    const h = (ymax - ymin) * scaleY;
 
                     // Box
                     myCtx.strokeStyle = "#00ffcc";
