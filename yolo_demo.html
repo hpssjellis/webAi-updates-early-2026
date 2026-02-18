@@ -2,43 +2,34 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Node Lab: Vision AI</title>
+    <title>Node Lab: Vision AI v4</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #121212; color: #e0e0e0; max-width: 900px; margin: auto; padding: 20px; text-align: center; }}
-        
-        .myViewport { position: relative; display: inline-block; margin-top: 20px; border: 4px solid #1e1e1e; border-radius: 12px; overflow: hidden; background: #000; }
-        #myImage { max-width: 100%; height: auto; display: block; min-width: 300px; min-height: 200px; }
+        body { font-family: sans-serif; background: #121212; color: #eee; text-align: center; padding: 20px; }
+        .myViewport { position: relative; display: inline-block; border: 2px solid #333; margin: 20px; background: #000; }
+        #myImage { max-width: 100%; height: auto; display: block; }
         #myCanvas { position: absolute; top: 0; left: 0; pointer-events: none; width: 100%; height: 100%; }
-        
-        .myControls { background: #1e1e1e; padding: 20px; border-radius: 12px; margin-top: 20px; border: 1px solid #333; }
-        #myStatus { margin: 15px 0; color: #4ec9b0; font-weight: bold; font-family: monospace; }
-        .myBtn { background: #0d6efd; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: bold; transition: 0.2s; }
-        .myBtn:hover { background: #0b5ed7; transform: scale(1.02); }
-        .myBtn:disabled { background: #444; cursor: not-allowed; transform: none; }
+        .myBtn { background: #0d6efd; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 1rem; }
+        .myBtn:disabled { background: #444; cursor: wait; }
+        #myStatus { color: #4ec9b0; margin: 10px; font-family: monospace; }
     </style>
 </head>
 <body>
 
-
-
-    <h1>👁️ AI Vision Laboratory</h1>
-    <p>Object Detection (YOLOv8) running directly in your browser.</p>
-
+    <h2>👁️ YOLOv8 Object Detection</h2>
+    
     <div class="myViewport">
         <img id="myImage" src="https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/cats.jpg" crossorigin="anonymous">
         <canvas id="myCanvas"></canvas>
     </div>
 
-    <div class="myControls">
-        <div id="myStatus">Ready. Click to load AI model.</div>
-        <button class="myBtn" id="myRunButton" onclick="myStartDetection()" disabled>
-    Loading AI Engine...
-</button>
+    <div>
+        <div id="myStatus">Initializing Engine...</div>
+        <button class="myBtn" id="myRunButton" onclick="myStartDetection()" disabled>Please Wait...</button>
     </div>
 
     <script type="module">
-        // Using esm.sh as it handles v4 next version dependencies better for browser environments
-        import { pipeline, env } from "https://esm.sh/@huggingface/transformers@4.0.0-next.3";
+        // Using your specific v4.0.0 CDN link
+        import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0/dist/transformers.min.js";
 
         async function myStartDetection() {
             const myStatus = document.getElementById('myStatus');
@@ -48,92 +39,50 @@
             const myCtx = myCanvas.getContext('2d');
 
             myButton.disabled = true;
-            myStatus.innerText = "🌀 Setting up AI Environment...";
+            myStatus.innerText = "🌀 Running AI Analysis...";
 
             try {
-                // Fix for "Unauthorized access" error:
-                // 1. Force the library to use remote files and skip local server checks
-              //  env.allowLocalModels = false;
-                // 2. Disable unnecessary check for wasm files in local directories
-             //   env.allowRemoteModels = true;
+                // THE CRITICAL FIX FOR "UNAUTHORIZED":
+                // Bypass HEAD requests and go straight to Hugging Face
+                env.allowLocalModels = false;
+                env.remoteHost = "https://huggingface.co/";
+                env.remotePathTemplate = "{model}/resolve/{revision}/";
 
-
-              // --- THE FIX STARTS HERE ---
-            // Force the library to skip the "check if file exists" HEAD request
-            env.useBrowserCache = true; 
-            env.allowLocalModels = false;
-            
-            // This is the magic line: it prevents the 'Unauthorized' HEAD request 
-            // and goes straight to GETting the file.
-            env.remoteHost = "https://huggingface.co/";
-            env.remotePathTemplate = "{model}/resolve/{revision}/";
-            // --- THE FIX ENDS HERE ---
-
-                myStatus.innerText = "📥 Downloading YOLOv8 model (this may take 10-20 seconds)...";
-
-                // Initialize the pipeline with explicit task and model
-                const myDetector = await pipeline(
-                    "object-detection",
-                    "Xenova/yolov8n"
-                );
-
-                myStatus.innerText = "🔍 Model Loaded! Analyzing pixels...";
-
-                // Run detection - v4 handles the HTMLImageElement directly
+                const myDetector = await pipeline("object-detection", "Xenova/yolov8n");
                 const myResults = await myDetector(myImage);
 
-                // Ensure Canvas matches the actual displayed image size
+                // Draw results
                 myCanvas.width = myImage.naturalWidth;
                 myCanvas.height = myImage.naturalHeight;
-                
-                // Clear any previous drawings
                 myCtx.clearRect(0, 0, myCanvas.width, myCanvas.height);
 
-                // Draw each detected object
-                myResults.forEach(myResult => {
-                    const { xmin, ymin, xmax, ymax } = myResult.box;
-                    const myWidth = xmax - xmin;
-                    const myHeight = ymax - ymin;
-
-                    // Draw the bounding box
+                myResults.forEach(myRes => {
+                    const { xmin, ymin, xmax, ymax } = myRes.box;
                     myCtx.strokeStyle = "#00ff00";
-                    myCtx.lineWidth = 4;
-                    myCtx.strokeRect(xmin, ymin, myWidth, myHeight);
-
-                    // Draw the text background
+                    myCtx.lineWidth = 5;
+                    myCtx.strokeRect(xmin, ymin, xmax - xmin, ymax - ymin);
+                    
                     myCtx.fillStyle = "#00ff00";
-                    const myLabel = `${myResult.label} ${Math.round(myResult.score * 100)}%`;
-                    const myTextWidth = myCtx.measureText(myLabel).width;
-                    myCtx.fillRect(xmin, ymin - 25, myTextWidth + 10, 25);
-
-                    // Draw the label text
-                    myCtx.fillStyle = "#000000";
-                    myCtx.font = "bold 18px Arial";
-                    myCtx.fillText(myLabel, xmin + 5, ymin - 7);
+                    myCtx.font = "bold 20px Arial";
+                    myCtx.fillText(myRes.label, xmin, ymin - 10);
                 });
 
-                myStatus.innerText = `✅ Detection Complete! Found ${myResults.length} objects.`;
-                console.log("AI Data:", myResults);
-
+                myStatus.innerText = `✅ Found ${myResults.length} objects.`;
             } catch (myErr) {
-                myStatus.innerText = "❌ AI Error: " + myErr.message;
-                console.error("Full Error Info:", myErr);
+                myStatus.innerText = "❌ Error: " + myErr.message;
+                console.error(myErr);
             } finally {
                 myButton.disabled = false;
             }
         }
 
-// 2. Attach to window IMMEDIATELY
-    window.myStartDetection = myStartDetection;
+        // KEY FIX: Explicitly attach to window so the HTML 'onclick' can see it
+        window.myStartDetection = myStartDetection;
 
-    // 3. Now that we are sure the function exists, enable the button
-    document.addEventListener('DOMContentLoaded', () => {
-        const myBtn = document.getElementById('myRunButton');
-        if (myBtn) {
-            myBtn.disabled = false;
-            myBtn.innerText = "Start AI Analysis";
-        }
-    });
+        // ONLY enable the button once the module has finished loading everything
+        document.getElementById('myRunButton').disabled = false;
+        document.getElementById('myRunButton').innerText = "Start AI Analysis";
+        document.getElementById('myStatus').innerText = "Engine Ready.";
     </script>
 </body>
 </html>
