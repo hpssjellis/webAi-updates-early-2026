@@ -320,7 +320,7 @@ function fireInference() {
 
             // Format the counts into a string: "person (2), chair (1)"
             const labelStrings = Object.entries(counts).map(([label, count]) => {
-                return `${label}${count > 1 ? ' (x' + count + ')' : ''}`;
+                return `${label}${count > 1 ? ' (x' + count + ')/n' : ''}`;
             });
 
             if (labelStrings.length > 0) {
@@ -338,39 +338,7 @@ function fireInference() {
 }
 
         
-        /*
-        function fireInference() {
-            if (myInferring || !myDetector) return;
-            myInferring = true;
-
-            mySnapCtx.drawImage(myCam, 0, 0, mySnap.width, mySnap.height);
-
-            // RawImage.fromCanvas is SYNCHRONOUS in v4 — no .then()
-            let frame;
-            try {
-                frame = RawImage.fromCanvas(mySnap);
-            } catch (err) {
-                console.error("RawImage error:", err);
-                myInferring = false;
-                return;
-            }
-
-            myDetector(frame, {
-                    threshold:  0.15,   // keep low — visible threshold set by slider at draw time
-                    percentage: true
-                })
-                .then(results => {
-                    myLastBoxes = results;
-                    myInferCount++;
-                    myInferring = false;
-                })
-                .catch(err => {
-                    console.error("Inference error:", err);
-                    myInferring = false;
-                });
-        }
-
-        */
+      
 
         // ── Main render loop — 60 fps, never awaited ───────────────────────
         // Key design: requestAnimationFrame is called synchronously at the END
