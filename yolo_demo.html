@@ -1,37 +1,104 @@
-<script type="module">
-    import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.3";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Node Lab: Vision AI</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; max-width: 800px; margin: auto; padding: 20px; text-align: center; }
+        .myNav { margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        .myNav a { color: #888; text-decoration: none; margin: 0 10px; }
+        .myContainer { position: relative; display: inline-block; margin-top: 20px; border: 2px solid #333; border-radius: 8px; overflow: hidden; }
+        #myImage { max-width: 100%; display: block; }
+        #myCanvas { position: absolute; top: 0; left: 0; pointer-events: none; }
+        .myControls { background: #1e1e1e; padding: 20px; border-radius: 10px; margin-top: 20px; }
+        #myStatus { margin: 15px 0; color: #4ec9b0; font-weight: bold; }
+        .myBtn { background: #0d6efd; color: white; border: none; padding: 12px 24px; border-radius: 5px; cursor: pointer; font-size: 1rem; }
+        .myBtn:disabled { background: #444; cursor: not-allowed; }
+    </style>
+</head>
+<body>
 
-    async function myStartDetection() {
-        const myStatus = document.getElementById('myStatus');
-        const myButton = document.getElementById('myRunButton');
-        const myImage = document.getElementById('myImage');
+    <nav class="myNav">
+        <a href="index.html">Hub</a> | <a href="servers.html">Servers</a> | <a href="data.html">Data</a> | <a href="chat.html">Network</a> | <a href="files.html">Files</a>
+    </nav>
 
-        myButton.disabled = true;
-        myStatus.innerText = "Loading YOLOv8 model (this may take a moment)...";
+    <h1>👁️ Vision AI Laboratory</h1>
+    <p>Using YOLOv8 to detect objects directly in the browser.</p>
 
-        try {
-            // v4 pipeline
-            const myDetector = await pipeline(
-                "object-detection",
-                "Xenova/yolov8n"
-            );
+    <div class="myContainer">
+        <img id="myImage" src="https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/cats.jpg" crossorigin="anonymous">
+        <canvas id="myCanvas"></canvas>
+    </div>
 
-            myStatus.innerText = "Model loaded! Analyzing image...";
+    <div class="myControls">
+        <div id="myStatus">Ready to analyze...</div>
+        <button class="myBtn" id="myRunButton" onclick="myStartDetection()">Start AI Analysis</button>
+    </div>
 
-            const myResults = await myDetector(myImage.src);
+    <script type="module">
+        // Import v4 from Hugging Face CDN
+        import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.3";
 
-            myStatus.innerText = "Detection complete! Check the console.";
-            console.log("AI Results:", myResults);
+        async function myStartDetection() {
+            const myStatus = document.getElementById('myStatus');
+            const myButton = document.getElementById('myRunButton');
+            const myImage = document.getElementById('myImage');
+            const myCanvas = document.getElementById('myCanvas');
+            const myCtx = myCanvas.getContext('2d');
 
-            alert(`Found ${myResults.length} objects!\nFirst object: ${myResults[0].label}`);
+            myButton.disabled = true;
+            myStatus.innerText = "🌀 Loading YOLOv8 model (approx. 15MB)...";
 
-        } catch (err) {
-            myStatus.innerText = "Error: " + err.message;
-            console.error(err);
-        } finally {
-            myButton.disabled = false;
+            try {
+                // 1. Initialize Pipeline
+                const myDetector = await pipeline(
+                    "object-detection",
+                    "Xenova/yolov8n"
+                );
+
+                myStatus.innerText = "🔍 Model Loaded! Detecting objects...";
+
+                // 2. Run Detection (Pass the image element directly)
+                const myResults = await myDetector(myImage);
+
+                // 3. Setup Canvas to match image size
+                myCanvas.width = myImage.clientWidth;
+                myCanvas.height = myImage.clientHeight;
+                myCtx.clearRect(0, 0, myCanvas.width, myCanvas.height);
+
+                // 4. Draw Results
+                myResults.forEach(myObj => {
+                    const { xmax, xmin, ymax, ymin } = myObj.box;
+                    const myWidth = xmax - xmin;
+                    const myHeight = ymax - ymin;
+
+                    // Draw Box
+                    myCtx.strokeStyle = "#00ff00";
+                    myCtx.lineWidth = 3;
+                    myCtx.strokeRect(xmin, ymin, myWidth, myHeight);
+
+                    // Draw Label
+                    myCtx.fillStyle = "#00ff00";
+                    myCtx.font = "16px Arial";
+                    myCtx.fillText(
+                        `${myObj.label} (${Math.round(myObj.score * 100)}%)`,
+                        xmin, 
+                        ymin > 20 ? ymin - 5 : ymin + 20
+                    );
+                });
+
+                myStatus.innerText = `✅ Success! Found ${myResults.length} objects.`;
+                console.log("AI Results:", myResults);
+
+            } catch (myErr) {
+                myStatus.innerText = "❌ Error: " + myErr.message;
+                console.error(myErr);
+            } finally {
+                myButton.disabled = false;
+            }
         }
-    }
 
-    window.myStartDetection = myStartDetection;
-</script>
+        window.myStartDetection = myStartDetection;
+    </script>
+</body>
+</html>
