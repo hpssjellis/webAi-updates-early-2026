@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Node Lab: Vision AI</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #121212; color: #e0e0e0; max-width: 900px; margin: auto; padding: 20px; text-align: center; }
+        .myNav { margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        .myNav a { color: #888; text-decoration: none; margin: 0 15px; }
+        .myNav a:hover { color: #0d6efd; }
+        
+        .myViewport { position: relative; display: inline-block; margin-top: 20px; border: 4px solid #1e1e1e; border-radius: 12px; overflow: hidden; background: #000; }
+        #myImage { max-width: 100%; height: auto; display: block; min-width: 300px; min-height: 200px; }
+        #myCanvas { position: absolute; top: 0; left: 0; pointer-events: none; width: 100%; height: 100%; }
+        
+        .myControls { background: #1e1e1e; padding: 20px; border-radius: 12px; margin-top: 20px; border: 1px solid #333; }
+        #myStatus { margin: 15px 0; color: #4ec9b0; font-weight: bold; font-family: monospace; }
+        .myBtn { background: #0d6efd; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: bold; transition: 0.2s; }
+        .myBtn:hover { background: #0b5ed7; transform: scale(1.02); }
+        .myBtn:disabled { background: #444; cursor: not-allowed; transform: none; }
+    </style>
+</head>
+<body>
+
+    <nav class="myNav">
+        <a href="index.html">Hub</a> | 
+        <a href="servers.html">Servers</a> | 
+        <a href="data.html">Data</a> | 
+        <a href="chat.html">Network</a> | 
+        <a href="files.html">Files</a>
+    </nav>
+
+    <h1>👁️ AI Vision Laboratory</h1>
+    <p>Object Detection (YOLOv8) running directly in your browser.</p>
+
+    <div class="myViewport">
+        <img id="myImage" src="https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/cats.jpg" crossorigin="anonymous">
+        <canvas id="myCanvas"></canvas>
+    </div>
+
+    <div class="myControls">
+        <div id="myStatus">Ready. Click to load AI model.</div>
+        <button class="myBtn" id="myRunButton" onclick="myStartDetection()">Start AI Analysis</button>
+    </div>
+
+    <script type="module">
+        // Using esm.sh as it handles v4 next version dependencies better for browser environments
+        import { pipeline, env } from "https://esm.sh/@huggingface/transformers@4.0.0-next.3";
+
+        async function myStartDetection() {
+            const myStatus = document.getElementById('myStatus');
+            const myButton = document.getElementById('myRunButton');
+            const myImage = document.getElementById('myImage');
+            const myCanvas = document.getElementById('myCanvas');
+            const myCtx = myCanvas.getContext('2d');
+
+            myButton.disabled = true;
+            myStatus.innerText = "🌀 Setting up AI Environment...";
+
+            try {
+                // Fix for "Unauthorized access" error:
+                // 1. Force the library to use remote files and skip local server checks
+              //  env.allowLocalModels = false;
+                // 2. Disable unnecessary check for wasm files in local directories
+             //   env.allowRemoteModels = true;
+
+
+              // --- THE FIX STARTS HERE ---
+            // Force the library to skip the "check if file exists" HEAD request
+            env.useBrowserCache = true; 
+            env.allowLocalModels = false;
+            
+            // This is the magic line: it prevents the 'Unauthorized' HEAD request 
+            // and goes straight to GETting the file.
+            env.remoteHost = "https://huggingface.co/";
+            env.remotePathTemplate = "{model}/resolve/{revision}/";
+            // --- THE FIX ENDS HERE ---
+
+                myStatus.innerText = "📥 Downloading YOLOv8 model (this may take 10-20 seconds)...";
+
+                // Initialize the pipeline with explicit task and model
+                const myDetector = await pipeline(
+                    "object-detection",
+                    "Xenova/yolov8n"
+                );
+
+                myStatus.innerText = "🔍 Model Loaded! Analyzing pixels...";
+
+                // Run detection - v4 handles the HTMLImageElement directly
+                const myResults = await myDetector(myImage);
+
+                // Ensure Canvas matches the actual displayed image size
+                myCanvas.width = myImage.naturalWidth;
+                myCanvas.height = myImage.naturalHeight;
+                
+                // Clear any previous drawings
+                myCtx.clearRect(0, 0, myCanvas.width, myCanvas.height);
+
+                // Draw each detected object
+                myResults.forEach(myResult => {
+                    const { xmin, ymin, xmax, ymax } = myResult.box;
+                    const myWidth = xmax - xmin;
+                    const myHeight = ymax - ymin;
+
+                    // Draw the bounding box
+                    myCtx.strokeStyle = "#00ff00";
+                    myCtx.lineWidth = 4;
+                    myCtx.strokeRect(xmin, ymin, myWidth, myHeight);
+
+                    // Draw the text background
+                    myCtx.fillStyle = "#00ff00";
+                    const myLabel = `${myResult.label} ${Math.round(myResult.score * 100)}%`;
+                    const myTextWidth = myCtx.measureText(myLabel).width;
+                    myCtx.fillRect(xmin, ymin - 25, myTextWidth + 10, 25);
+
+                    // Draw the label text
+                    myCtx.fillStyle = "#000000";
+                    myCtx.font = "bold 18px Arial";
+                    myCtx.fillText(myLabel, xmin + 5, ymin - 7);
+                });
+
+                myStatus.innerText = `✅ Detection Complete! Found ${myResults.length} objects.`;
+                console.log("AI Data:", myResults);
+
+            } catch (myErr) {
+                myStatus.innerText = "❌ AI Error: " + myErr.message;
+                console.error("Full Error Info:", myErr);
+            } finally {
+                myButton.disabled = false;
+            }
+        }
+
+        // Attach to window so the button can find it
+        window.myStartDetection = myStartDetection;
+    </script>
+</body>
+</html>
