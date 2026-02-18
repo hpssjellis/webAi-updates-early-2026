@@ -59,6 +59,25 @@
     const gallery = document.getElementById('gallery');
 
     // 1. Initialize CLIP (Two specialized pipelines)
+    // 1. Initialize the specific CLIP encoders
+    document.getElementById('loadBtn').onclick = async () => {
+        status.textContent = "⏳ Loading CLIP sub-models...";
+        try {
+            // Use the SPECIFIC sub-models for feature extraction
+            // This avoids the 'is not a function' error by targeting the exact architecture
+            visionModel = await pipeline('feature-extraction', 'onnx-community/clip-vit-base-patch32-vision', { device: 'webgpu' });
+            textModel = await pipeline('feature-extraction', 'onnx-community/clip-vit-base-patch32-text', { device: 'webgpu' });
+            
+            status.textContent = "✅ Ready! Models specific to vision and text loaded.";
+            document.getElementById('setup').style.display = 'none';
+            document.getElementById('mainUI').style.display = 'block';
+        } catch (e) {
+            status.textContent = "❌ Error: " + e.message;
+            console.error("Full Error Info:", e);
+        }
+    };
+
+    /*
     document.getElementById('loadBtn').onclick = async () => {
         status.textContent = "⏳ Loading CLIP models...";
         try {
@@ -73,6 +92,9 @@
             status.textContent = "❌ Error: " + e.message;
         }
     };
+
+
+    */
 
     // 2. Handle Image Upload & Indexing
     document.getElementById('fileInput').onchange = async (e) => {
