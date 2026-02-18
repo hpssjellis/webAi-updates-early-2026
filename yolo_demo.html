@@ -7,7 +7,7 @@
         body { font-family: sans-serif; background: #121212; color: #eee; text-align: center; padding: 20px; }
         .myViewport { position: relative; display: inline-block; border: 2px solid #333; margin: 20px; background: #000; }
         #myImage { max-width: 100%; height: auto; display: block; }
-        #myCanvas { position: absolute; top: 0; left: 0; pointer-events: none; width: 100%; height: 100%; }
+        #myCanvas { position: absolute; top: 0; left: 0; pointer-events: none; }
         .myBtn { background: #0d6efd; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 1rem; }
         .myBtn:disabled { background: #444; cursor: wait; }
         #myStatus { color: #4ec9b0; margin: 10px; font-family: monospace; }
@@ -18,7 +18,9 @@
     <h2>👁️ YOLOv8 Object Detection</h2>
     
     <div class="myViewport">
-        <img id="myImage" src="https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/cats.jpg" crossorigin="anonymous">
+        <img id="myImage"
+             src="https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/cats.jpg"
+             crossorigin="anonymous">
         <canvas id="myCanvas"></canvas>
     </div>
 
@@ -28,9 +30,13 @@
     </div>
 
     <script type="module">
-        // Using your specific v4.0.0 CDN link
         import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.3";
-                                         
+
+        // REQUIRED for browser use in v4
+        env.allowLocalModels = false;
+        env.useBrowserCache = true;
+        env.remoteHost = "https://huggingface.co";
+        env.remotePathTemplate = "{model}/resolve/{revision}/";
 
         async function myStartDetection() {
             const myStatus = document.getElementById('myStatus');
@@ -43,44 +49,47 @@
             myStatus.innerText = "🌀 Running AI Analysis...";
 
             try {
-                // THE CRITICAL FIX FOR "UNAUTHORIZED":
-                // Bypass HEAD requests and go straight to Hugging Face
-                env.allowLocalModels = false;
-                env.remoteHost = "https://huggingface.co/";
-                env.remotePathTemplate = "{model}/resolve/{revision}/";
+                // WAIT FOR IMAGE TO BE LOADED
+                await myImage.decode();
 
-                const myDetector = await pipeline("object-detection", "Xenova/yolov8n");
-                const myResults = await myDetector(myImage);
-
-                // Draw results
+                // Resize canvas to match actual pixel size
                 myCanvas.width = myImage.naturalWidth;
                 myCanvas.height = myImage.naturalHeight;
+
+                // Load YOLOv8
+                const myDetector = await pipeline("object-detection", "Xenova/yolov8n");
+
+                // Run detection
+                const myResults = await myDetector(myImage);
+
+                // Draw boxes
                 myCtx.clearRect(0, 0, myCanvas.width, myCanvas.height);
 
-                myResults.forEach(myRes => {
-                    const { xmin, ymin, xmax, ymax } = myRes.box;
+                myResults.forEach(r => {
+                    const { xmin, ymin, xmax, ymax } = r.box;
+
                     myCtx.strokeStyle = "#00ff00";
-                    myCtx.lineWidth = 5;
+                    myCtx.lineWidth = 4;
                     myCtx.strokeRect(xmin, ymin, xmax - xmin, ymax - ymin);
-                    
+
                     myCtx.fillStyle = "#00ff00";
-                    myCtx.font = "bold 20px Arial";
-                    myCtx.fillText(myRes.label, xmin, ymin - 10);
+                    myCtx.font = "bold 22px Arial";
+                    myCtx.fillText(`${r.label} (${(r.score*100).toFixed(1)}%)`, xmin, ymin - 8);
                 });
 
                 myStatus.innerText = `✅ Found ${myResults.length} objects.`;
-            } catch (myErr) {
-                myStatus.innerText = "❌ Error: " + myErr.message;
-                console.error(myErr);
+            } catch (err) {
+                myStatus.innerText = "❌ Error: " + err.message;
+                console.error(err);
             } finally {
                 myButton.disabled = false;
             }
         }
 
-        // KEY FIX: Explicitly attach to window so the HTML 'onclick' can see it
+        // Expose to HTML
         window.myStartDetection = myStartDetection;
 
-        // ONLY enable the button once the module has finished loading everything
+        // Enable button once module loads
         document.getElementById('myRunButton').disabled = false;
         document.getElementById('myRunButton').innerText = "Start AI Analysis";
         document.getElementById('myStatus').innerText = "Engine Ready.";
