@@ -2,100 +2,82 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Transformers.js v4 Simplified Guide</title>
+    <title>Transformers.js v4 Hub Explorer</title>
 </head>
-<body style="font-family: sans-serif; line-height: 1.6; padding: 20px; color: #333; max-width: 800px; margin: auto; background: #f9f9f9;">
+<body style="font-family: sans-serif; line-height: 1.6; padding: 20px; color: #333; max-width: 900px; margin: auto; background: #f4f4f9;">
 
-    <h1 style="color: #222; border-bottom: 2px solid #ddd;">Transformers.js v4 Simplified Examples</h1>
-    <p>This page demonstrates the core functions of the <code>@huggingface/transformers</code> library using <strong>v4.0.0-next.3</strong>.</p>
-
-    <div id="myOutputSection" style="background: #fff; border: 1px solid #ccc; padding: 15px; border-radius: 8px; min-height: 50px; margin-bottom: 20px; white-space: pre-wrap; font-family: monospace; font-size: 0.9em;">
-Click a button below to see the code and results...
+    <h1 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px;">Hugging Face Hub Explorer (v4)</h1>
+    
+    <div style="margin-bottom: 20px;">
+        <label for="myModelInput">Model ID:</label>
+        <input type="text" id="myModelInput" value="Xenova/all-MiniLM-L6-v2" style="padding: 8px; width: 250px;">
+        <button onclick="myExploreModel()" style="padding: 8px 15px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Explore Repository</button>
     </div>
 
-    <section style="margin-bottom: 30px;">
-        <h2 style="color: #444;">1. The Pipeline API (The Easiest Way)</h2>
-        <p>The <code>pipeline()</code> function is a "helper" that combines a model and a tokenizer into one object.</p>
-        <button onclick="myRunSentimentAnalysis()" style="padding: 10px; cursor: pointer;">Run Sentiment Analysis</button>
-    </section>
+    <div id="myStatus" style="font-style: italic; margin-bottom: 10px; color: #666;"></div>
 
-    <section style="margin-bottom: 30px;">
-        <h2 style="color: #444;">2. Auto-Classes (Lower Level)</h2>
-        <p>Use <code>AutoTokenizer</code> and <code>AutoModel</code> if you need to process data manually before the model sees it.</p>
-        <button onclick="myRunTokenization()" style="padding: 10px; cursor: pointer;">Run Manual Tokenization</button>
-    </section>
-
-    <section style="margin-bottom: 30px;">
-        <h2 style="color: #444;">3. Handling Data</h2>
-        <p>Transformers uses its own <code>Tensor</code> class to handle multi-dimensional math arrays.</p>
-        <button onclick="myCreateTensor()" style="padding: 10px; cursor: pointer;">Create a Raw Tensor</button>
-    </section>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <div>
+            <h3>File List</h3>
+            <div id="myFileList" style="background: #fff; border: 1px solid #ddd; padding: 10px; height: 300px; overflow-y: auto; border-radius: 5px;"></div>
+        </div>
+        <div>
+            <h3>Metadata & Sizes</h3>
+            <div id="myMetaList" style="background: #fff; border: 1px solid #ddd; padding: 10px; height: 300px; overflow-y: auto; border-radius: 5px;"></div>
+        </div>
+    </div>
 
     <script type="module">
-        // Importing the main functions from the specific CDN provided
+        // Import Hub utilities from the v4 CDN
         import { 
-            pipeline, 
-            AutoTokenizer, 
-            AutoModel, 
-            Tensor,
-            env 
+            list_repo_files, 
+            get_model_metadata 
         } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.3';
 
-        // We can configure the environment (env) globally
-        env.allowLocalModels = false; // Force using the web/CDN models
+        const myStatus = document.getElementById('myStatus');
+        const myFileListDiv = document.getElementById('myFileList');
+        const myMetaListDiv = document.getElementById('myMetaList');
 
-        const myOutputDisplay = document.getElementById('myOutputSection');
+        window.myExploreModel = async function() {
+            const myModelId = document.getElementById('myModelInput').value;
+            
+            myStatus.innerText = "Fetching data from Hugging Face...";
+            myFileListDiv.innerHTML = "<em>Loading...</em>";
+            myMetaListDiv.innerHTML = "<em>Loading...</em>";
 
-        // EXAMPLE 1: Using the pipeline function
-        window.myRunSentimentAnalysis = async function() {
-            myOutputDisplay.innerText = "Loading model... (this may take a moment)";
             try {
-                // 'sentiment-analysis' is a high-level task name
-                const myClassifier = await pipeline('sentiment-analysis');
-                const myResult = await myClassifier('I love using new web technologies!');
+                // 1. List files in the repo
+                const myFiles = await list_repo_files(myModelId);
                 
-                myOutputDisplay.innerText = "Code:\n" +
-                    "const myClassifier = await pipeline('sentiment-analysis');\n" +
-                    "const myResult = await myClassifier('I love using new web technologies!');\n\n" +
-                    "Result:\n" + JSON.stringify(myResult, null, 2);
+                // 2. Get detailed metadata (including sizes)
+                const myMetadata = await get_model_metadata(myModelId);
+
+                // Display file names
+                myFileListDiv.innerHTML = `<ul style="padding-left: 20px;">${myFiles.map(f => `<li>${f}</li>`).join('')}</ul>`;
+
+                // Display sizes from sibling information in metadata
+                // Note: Metadata contains 'siblings' which are the actual file objects
+                let mySizeHTML = `<table style="width:100%; border-collapse: collapse;">
+                    <tr style="background:#eee;"><th style="text-align:left; padding:5px;">File</th><th style="text-align:right; padding:5px;">Size</th></tr>`;
+                
+                myMetadata.siblings.forEach(myFileObj => {
+                    const mySizeMB = myFileObj.size ? (myFileObj.size / (1024 * 1024)).toFixed(2) + " MB" : "Unknown";
+                    mySizeHTML += `<tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding:5px; font-size:0.85em;">${myFileObj.rfilename}</td>
+                        <td style="padding:5px; text-align:right; font-size:0.85em;">${mySizeMB}</td>
+                    </tr>`;
+                });
+                mySizeHTML += `</table>`;
+                
+                myMetaListDiv.innerHTML = mySizeHTML;
+                myStatus.innerText = "Ready.";
+
             } catch (myError) {
-                myOutputDisplay.innerText = "Error: " + myError.message;
+                myStatus.innerText = "Error: " + myError.message;
+                myFileListDiv.innerText = "Failed to load.";
+                myMetaListDiv.innerText = "Failed to load.";
             }
         };
-
-        // EXAMPLE 2: Manual Tokenization
-        window.myRunTokenization = async function() {
-            myOutputDisplay.innerText = "Loading tokenizer...";
-            try {
-                const myTokenizer = await AutoTokenizer.from_pretrained('Xenova/bert-base-uncased');
-                const myText = "Hello, how are you?";
-                const myTokenIds = await myTokenizer(myText);
-
-                myOutputDisplay.innerText = "Code:\n" +
-                    "const myTokenizer = await AutoTokenizer.from_pretrained('bert-base-uncased');\n" +
-                    "const myTokenIds = await myTokenizer('Hello, how are you?');\n\n" +
-                    "Result (Input IDs and Attention Mask):\n" + JSON.stringify(myTokenIds, (k, v) => typeof v === 'bigint' ? v.toString() : v, 2);
-            } catch (myError) {
-                myOutputDisplay.innerText = "Error: " + myError.message;
-            }
-        };
-
-        // EXAMPLE 3: Creating a Tensor
-        window.myCreateTensor = async function() {
-            // A Tensor is essentially a typed array with a shape
-            const myData = new Float32Array([1, 2, 3, 4]);
-            const myShape = [2, 2];
-            const myNewTensor = new Tensor('float32', myData, myShape);
-
-            myOutputDisplay.innerText = "Code:\n" +
-                "const myData = new Float32Array([1, 2, 3, 4]);\n" +
-                "const myNewTensor = new Tensor('float32', myData, [2, 2]);\n\n" +
-                "Resulting Tensor object:\n" +
-                "Type: " + myNewTensor.type + "\n" +
-                "Shape: " + JSON.stringify(myNewTensor.dims) + "\n" +
-                "Data: " + myNewTensor.data;
-        };
-
     </script>
 </body>
 </html>
