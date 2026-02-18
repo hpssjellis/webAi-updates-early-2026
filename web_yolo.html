@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<body style="background:#111;color:#eee;font-family:sans-serif;text-align:center;padding:20px">
+
+<h2>Live YOLOv8 Detection</h2>
+
+<video id="cam" autoplay playsinline style="width:480px;border:2px solid #444"></video>
+<canvas id="out" width="480" height="360" style="position:absolute;left:0;top:0"></canvas>
+
+<br><br>
+<button id="run" style="padding:10px 20px;font-size:1rem">Start</button>
+<div id="status" style="margin-top:10px;font-family:monospace"></div>
+
+<script type="module">
+import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.3";
+
+env.allowLocalModels = false;
+env.useBrowserCache = true;
+env.remoteHost = "https://huggingface.co";
+env.remotePathTemplate = "{model}/resolve/{revision}/";
+
+const cam = document.getElementById("cam");
+const out = document.getElementById("out");
+const ctx = out.getContext("2d");
+const status = document.getElementById("status");
+
+let detector = null;
+let running = false;
+
+async function startCam() {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    cam.srcObject = stream;
+    await cam.play();
+}
+
+async function loop() {
+    if (!running) return;
+
+    ctx.drawImage(cam, 0, 0, out.width, out.height);
+    const results = await detector(cam);
+
+    results.forEach(r => {
+        const { xmin, ymin, xmax, ymax } = r.box;
+        ctx.strokeStyle = "#00ff00";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(xmin, ymin, xmax - xmin, ymax - ymin);
+        ctx.fillStyle = "#00ff00";
+        ctx.font = "16px Arial";
+        ctx.fillText(r.label, xmin, ymin - 5);
+    });
+
+    requestAnimationFrame(loop);
+}
+
+document.getElementById("run").onclick = async () => {
+    status.textContent = "Loading model...";
+    await startCam();
+    detector = await pipeline("object-detection", "Xenova/yolov8n");
+    status.textContent = "Running live detection";
+    running = true;
+    loop();
+};
+</script>
+
+</body>
+</html>
