@@ -4,10 +4,7 @@
     <meta charset="UTF-8">
     <title>Node Lab: Vision AI</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #121212; color: #e0e0e0; max-width: 900px; margin: auto; padding: 20px; text-align: center; }
-        .myNav { margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 10px; }
-        .myNav a { color: #888; text-decoration: none; margin: 0 15px; }
-        .myNav a:hover { color: #0d6efd; }
+        body { font-family: 'Segoe UI', sans-serif; background: #121212; color: #e0e0e0; max-width: 900px; margin: auto; padding: 20px; text-align: center; }}
         
         .myViewport { position: relative; display: inline-block; margin-top: 20px; border: 4px solid #1e1e1e; border-radius: 12px; overflow: hidden; background: #000; }
         #myImage { max-width: 100%; height: auto; display: block; min-width: 300px; min-height: 200px; }
@@ -22,13 +19,7 @@
 </head>
 <body>
 
-    <nav class="myNav">
-        <a href="index.html">Hub</a> | 
-        <a href="servers.html">Servers</a> | 
-        <a href="data.html">Data</a> | 
-        <a href="chat.html">Network</a> | 
-        <a href="files.html">Files</a>
-    </nav>
+
 
     <h1>👁️ AI Vision Laboratory</h1>
     <p>Object Detection (YOLOv8) running directly in your browser.</p>
@@ -40,7 +31,9 @@
 
     <div class="myControls">
         <div id="myStatus">Ready. Click to load AI model.</div>
-        <button class="myBtn" id="myRunButton" onclick="myStartDetection()">Start AI Analysis</button>
+        <button class="myBtn" id="myRunButton" onclick="myStartDetection()" disabled>
+    Loading AI Engine...
+</button>
     </div>
 
     <script type="module">
@@ -130,8 +123,17 @@
             }
         }
 
-        // Attach to window so the button can find it
-        window.myStartDetection = myStartDetection;
+// 2. Attach to window IMMEDIATELY
+    window.myStartDetection = myStartDetection;
+
+    // 3. Now that we are sure the function exists, enable the button
+    document.addEventListener('DOMContentLoaded', () => {
+        const myBtn = document.getElementById('myRunButton');
+        if (myBtn) {
+            myBtn.disabled = false;
+            myBtn.innerText = "Start AI Analysis";
+        }
+    });
     </script>
 </body>
 </html>
