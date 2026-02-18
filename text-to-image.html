@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Janus-Pro | Image Generator</title>
+    <style>
+        :root { --accent: #00ffcc; --bg: #0d0d0d; --panel: #161616; }
+        body { background: var(--bg); color: #eee; font-family: system-ui; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .card { background: var(--panel); border: 1px solid #333; border-radius: 12px; padding: 20px; width: 100%; max-width: 600px; }
+        .controls { display: flex; gap: 10px; margin-bottom: 20px; }
+        button { background: var(--accent); color: #000; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        button:disabled { opacity: 0.3; }
+        input { flex: 1; background: #000; border: 1px solid #444; color: #fff; padding: 10px; border-radius: 6px; }
+        #resultImage { width: 100%; border-radius: 8px; margin-top: 15px; display: none; image-rendering: pixelated; }
+        .status { font-family: monospace; font-size: 0.8rem; color: #888; margin-top: 10px; text-align: center; }
+    </style>
+</head>
+<body>
+    <h2>🎨 Janus-Pro Image Gen</h2>
+    <div class="card">
+        <button id="initBtn">🚀 Load Model (1.2GB)</button>
+        <div id="uiBody" style="display: none; margin-top: 20px;">
+            <div class="controls">
+                <input type="text" id="promptInput" placeholder="A futuristic cyberpunk city...">
+                <button id="genBtn">Generate</button>
+            </div>
+            <img id="resultImage" alt="Generated result">
+        </div>
+        <div id="statusMsg" class="status">WebGPU required for best performance.</div>
+    </div>
+
+    <script type="module">
+        import { AutoProcessor, MultiModalityCausalLM } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
+
+        let model, processor;
+        const initBtn = document.getElementById('initBtn');
+        const genBtn = document.getElementById('genBtn');
+        const statusMsg = document.getElementById('statusMsg');
+
+        initBtn.onclick = async () => {
+            initBtn.disabled = true;
+            statusMsg.textContent = "Loading model... please wait.";
+            try {
+                const model_id = "onnx-community/Janus-Pro-1B-ONNX";
+                processor = await AutoProcessor.from_pretrained(model_id);
+                model = await MultiModalityCausalLM.from_pretrained(model_id, {
+                    device: 'webgpu',
+                    dtype: 'q4',
+                });
+                document.getElementById('uiBody').style.display = 'block';
+                initBtn.style.display = 'none';
+                statusMsg.textContent = "Ready!";
+            } catch (e) {
+                statusMsg.textContent = "Error: " + e.message;
+            }
+        };
+
+        genBtn.onclick = async () => {
+            const prompt = document.getElementById('promptInput').value;
+            if(!prompt) return;
+            
+            genBtn.disabled = true;
+            statusMsg.textContent = "Generating... (this takes a moment)";
+            
+            try {
+                const inputs = await processor(prompt, { chat_template: "text_to_image" });
+                const outputs = await model.generate_images({
+                    ...inputs,
+                    min_new_tokens: 576,
+                    max_new_tokens: 576,
+                    do_sample: true,
+                });
+
+                const blob = await outputs[0].toBlob();
+                const imgEl = document.getElementById('resultImage');
+                imgEl.src = URL.createObjectURL(blob);
+                imgEl.style.display = 'block';
+                statusMsg.textContent = "Done!";
+            } catch (e) {
+                statusMsg.textContent = "Gen Error: " + e.message;
+            } finally {
+                genBtn.disabled = false;
+            }
+        };
+    </script>
+</body>
+</html>
