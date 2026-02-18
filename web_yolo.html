@@ -152,8 +152,19 @@
 
     <div id="myStatus">Ready — click ▶ to begin.</div>
     <div id="myDeviceBadge"></div>
-    <div id="myObjectLog" style="margin-top: 20px; color: #00ffcc; font-family: monospace; background: #1a1a1a; padding: 10px; border-radius: 5px; width: 480px; text-align: left; min-height: 50px; border: 1px solid #333;">
-    Detected: (waiting...)
+    <div id="myObjectLog" style="
+        margin-top: 20px; 
+        color: #00ffcc; 
+        font-family: 'Courier New', monospace; 
+        background: #111; 
+        padding: 12px; 
+        border-radius: 6px; 
+        width: 480px; 
+        border: 1px solid #333;
+        white-space: pre-wrap;
+        line-height: 1.4;
+    ">
+        Waiting for detections...
     </div>
 
     <!-- ─────────────────────────────────────────────────────────────────── -->
@@ -282,6 +293,70 @@
         // We snapshot the video, hand off to the model, and update myLastBoxes
         // when it resolves — without ever blocking the render loop.
 
+
+// ── Fire one inference in the background ───────────────────────────
+        // We snapshot the video, hand off to the model, and update myLastBoxes
+        // when it resolves — without ever blocking the render loop.
+        function fireInference() {
+            if (myInferring || !myDetector) return;
+            myInferring = true;
+
+            mySnapCtx.drawImage(myCam, 0, 0, mySnap.width, mySnap.height);
+
+            // RawImage.fromCanvas is SYNCHRONOUS in v4 — no .then()
+            let frame;
+            try {
+                frame = RawImage.fromCanvas(mySnap);
+            } catch (err) {
+                console.error("RawImage error:", err);
+                myInferring = false;
+                return;
+            }
+
+            myDetector(frame, {
+                    threshold:  0.15,   // keep low — visible threshold set by slider at draw time
+                    percentage: true
+                })
+                .then(results => {
+                    myLastBoxes = results;
+                    myInferCount++;
+                    myInferring = false;
+
+                    // ── Update the text log ──
+                    const logDiv = document.getElementById("myObjectLog");
+                    if (!logDiv) return; // safety check
+
+                    const thresh = myThresh.value / 100;
+
+                    // 1. Filter results based on the current threshold slider
+                    const validObjects = results.filter(obj => obj.score >= thresh);
+
+                    if (validObjects.length > 0) {
+                        // 2. Sort by confidence (highest score first)
+                        validObjects.sort((a, b) => b.score - a.score);
+
+                        // 3. Create a line for each object: "[92%]  PERSON"
+                        const lines = validObjects.map(obj => {
+                            const pct = Math.round(obj.score * 100);
+                            return `[${pct}%]  ${obj.label.toUpperCase()}`;
+                        });
+
+                        // 4. Update the div with the new vertical list
+                        logDiv.innerText = lines.join('\n');
+                    } else {
+                        logDiv.innerText = "Scanning...";
+                    }
+                })
+                .catch(err => {
+                    console.error("Inference error:", err);
+                    myInferring = false;
+                });
+        }
+
+        
+
+        /*
+
 function fireInference() {
     if (myInferring || !myDetector) return;
     myInferring = true;
@@ -337,7 +412,7 @@ function fireInference() {
         });
 }
 
-        
+  */      
       
 
         // ── Main render loop — 60 fps, never awaited ───────────────────────
