@@ -56,125 +56,169 @@
 </div>
 
 <script type="module">
-    // Using the absolute latest 'next' version to ensure recent WebGPU fixes
-    import { AutoProcessor, MultiModalityCausalLM, RawImage } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@next";
+import { AutoProcessor, MultiModalityCausalLM, RawImage } 
+from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2/dist/transformers.min.js";
 
-    let model, processor;
-    const status = document.getElementById('status');
-    const loadBtn = document.getElementById('loadBtn');
-    const genBtn = document.getElementById('genBtn');
-    const visionBtn = document.getElementById('visionBtn');
-    const fileInput = document.getElementById('fileInput');
+let model = null;
+let processor = null;
+let currentImageURL = null;
+let device = "cpu";
 
-    // 1. Load Model with fallback logic
-    loadBtn.onclick = async () => {
-        loadBtn.disabled = true;
-        status.textContent = "⏳ Loading model... this may take a minute.";
-        
-        try {
-            const model_id = "onnx-community/Janus-Pro-1B-ONNX";
-            processor = await AutoProcessor.from_pretrained(model_id);
-            
-            model = await MultiModalityCausalLM.from_pretrained(model_id, {
-                device: 'webgpu', // Try GPU first
-                dtype: 'q4',
-                progress_callback: (p) => {
-                    if(p.status === 'progress') {
-                        status.textContent = `Downloading: ${Math.round(p.progress)}%`;
-                    }
+const status = document.getElementById('status');
+const loadBtn = document.getElementById('loadBtn');
+const genBtn = document.getElementById('genBtn');
+const visionBtn = document.getElementById('visionBtn');
+const fileInput = document.getElementById('fileInput');
+
+// -------- WebGPU Detection --------
+async function detectWebGPU() {
+    if (!("gpu" in navigator)) return false;
+    try {
+        const adapter = await navigator.gpu.requestAdapter();
+        return !!adapter;
+    } catch {
+        return false;
+    }
+}
+
+// -------- Model Loading --------
+loadBtn.onclick = async () => {
+    loadBtn.disabled = true;
+
+    const hasGPU = await detectWebGPU();
+    device = hasGPU ? "webgpu" : "cpu";
+
+    status.textContent = `⏳ Loading model on ${device.toUpperCase()}...`;
+
+    try {
+        const model_id = "onnx-community/Janus-Pro-1B-ONNX";
+
+        processor = await AutoProcessor.from_pretrained(model_id);
+
+        model = await MultiModalityCausalLM.from_pretrained(model_id, {
+            device,
+            dtype: device === "webgpu" ? "q4" : "q8",
+            progress_callback: (p) => {
+                if (p.status === "progress") {
+                    status.textContent = `Downloading: ${Math.round(p.progress)}%`;
                 }
-            });
+            }
+        });
 
-            status.textContent = "✅ Model Ready on WebGPU!";
-            document.getElementById('setupView').style.display = 'none';
-            document.getElementById('mainView').style.display = 'block';
-        } catch (e) {
-            console.error(e);
-            status.textContent = "❌ WebGPU Error. Your hardware might not support this model's complex math. Try refreshing and check browser flags.";
-        }
-    };
+        status.textContent = `✅ Model Ready on ${device.toUpperCase()}`;
+        document.getElementById('setupView').style.display = 'none';
+        document.getElementById('mainView').style.display = 'block';
 
-    // 2. Text-to-Image Generation
-    genBtn.onclick = async () => {
-        const text = document.getElementById('prompt').value;
-        if(!text) return alert("Enter a prompt!");
-        
-        setLoading(true, "🎨 AI is drawing... (approx 30s)");
-        
-        try {
-            const inputs = await processor(text, { chat_template: "text_to_image" });
-            
-            // Janus generates exactly 576 visual tokens
-            const outputs = await model.generate_images({
-                ...inputs,
-                min_new_tokens: 576,
-                max_new_tokens: 576,
-                do_sample: true,
-            });
+    } catch (e) {
+        console.error(e);
+        status.textContent = "❌ Model failed to load. Check console.";
+        loadBtn.disabled = false;
+    }
+};
 
-            const blob = await outputs[0].toBlob();
-            showResult('image', URL.createObjectURL(blob));
-        } catch (e) {
-            status.textContent = "❌ Generation failed: Hardware Dispatch Error.";
-            console.error(e);
-        } finally {
-            setLoading(false, "✅ Done.");
-        }
-    };
+// -------- Text-to-Image --------
+genBtn.onclick = async () => {
+    const text = document.getElementById('prompt').value.trim();
+    if (!text) return alert("Enter a prompt!");
 
-    // 3. Vision Analysis
-    visionBtn.onclick = () => fileInput.click();
-    fileInput.onchange = async (e) => {
-        const file = e.target.files[0];
-        if(!file) return;
-
-        const userPrompt = document.getElementById('prompt').value || "Describe this image.";
-        setLoading(true, "👁️ AI is looking at the photo...");
-
-        try {
-            // CRITICAL: Force 384x384 resize to prevent Dispatch errors
-            const image = await RawImage.fromURL(URL.createObjectURL(file));
-            
-            const conversation = [{
-                role: "<|User|>",
-                content: `<image_placeholder>\n${userPrompt}`,
-                images: [image]
-            }];
-
-            const inputs = await processor(conversation);
-            const outputs = await model.generate({ ...inputs, max_new_tokens: 128 });
-            const response = processor.batch_decode(outputs, { skip_special_tokens: true });
-
-            showResult('text', response[0]);
-        } catch (e) {
-            status.textContent = "❌ Vision failed. Ensure the image is a standard format.";
-            console.error(e);
-        } finally {
-            setLoading(false, "✅ Analysis Complete.");
-        }
-    };
-
-    // UI Helpers
-    function setLoading(isLoading, msg) {
-        status.textContent = msg;
-        document.getElementById('loader').style.display = isLoading ? 'block' : 'none';
-        genBtn.disabled = isLoading;
-        visionBtn.disabled = isLoading;
+    if (!model.generate_images) {
+        status.textContent = "❌ generate_images() not supported in this version.";
+        return;
     }
 
-    function showResult(type, content) {
-        const img = document.getElementById('outputImage');
-        const txt = document.getElementById('outputText');
-        if(type === 'image') {
-            img.src = content;
-            img.style.display = 'block';
-            txt.style.display = 'none';
-        } else {
-            txt.textContent = content;
-            txt.style.display = 'block';
-            img.style.display = 'none';
-        }
+    setLoading(true, "🎨 Generating image...");
+
+    try {
+        const inputs = await processor(text, { chat_template: "text_to_image" });
+
+        const outputs = await model.generate_images({
+            ...inputs,
+            max_new_tokens: 576,
+            do_sample: true,
+            temperature: 0.8,
+        });
+
+        const blob = await outputs[0].toBlob();
+
+        // Cleanup previous image URL
+        if (currentImageURL) URL.revokeObjectURL(currentImageURL);
+        currentImageURL = URL.createObjectURL(blob);
+
+        showResult("image", currentImageURL);
+
+    } catch (e) {
+        console.error(e);
+        status.textContent = "❌ Image generation failed.";
+    } finally {
+        setLoading(false, "✅ Done.");
     }
+};
+
+// -------- Vision Analysis --------
+visionBtn.onclick = () => fileInput.click();
+
+fileInput.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const userPrompt = document.getElementById('prompt').value || "Describe this image.";
+
+    setLoading(true, "👁️ Analyzing image...");
+
+    try {
+        let image = await RawImage.fromURL(URL.createObjectURL(file));
+
+        // Proper resize to avoid WebGPU dispatch crash
+        image = image.resize(384, 384);
+
+        const conversation = [{
+            role: "<|User|>",
+            content: `<image_placeholder>\n${userPrompt}`,
+            images: [image]
+        }];
+
+        const inputs = await processor(conversation);
+        const outputs = await model.generate({
+            ...inputs,
+            max_new_tokens: 128,
+            temperature: 0.7,
+        });
+
+        const response = processor.batch_decode(outputs, { skip_special_tokens: true });
+
+        showResult("text", response[0]);
+
+    } catch (e) {
+        console.error(e);
+        status.textContent = "❌ Vision analysis failed.";
+    } finally {
+        setLoading(false, "✅ Analysis Complete.");
+    }
+};
+
+// -------- UI Helpers --------
+function setLoading(isLoading, msg) {
+    status.textContent = msg;
+    document.getElementById('loader').style.display = isLoading ? 'block' : 'none';
+    genBtn.disabled = isLoading;
+    visionBtn.disabled = isLoading;
+}
+
+function showResult(type, content) {
+    const img = document.getElementById('outputImage');
+    const txt = document.getElementById('outputText');
+
+    if (type === "image") {
+        img.src = content;
+        img.style.display = "block";
+        txt.style.display = "none";
+    } else {
+        txt.textContent = content;
+        txt.style.display = "block";
+        img.style.display = "none";
+    }
+}
 </script>
+
 </body>
 </html>
