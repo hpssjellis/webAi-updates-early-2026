@@ -2,93 +2,664 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Janus-Pro | Image Generator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Janus-Pro | Vision Analysis</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
-        :root { --accent: #00ffcc; --bg: #0d0d0d; --panel: #161616; }
-        body { background: var(--bg); color: #eee; font-family: system-ui; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-        .card { background: var(--panel); border: 1px solid #333; border-radius: 12px; padding: 20px; width: 100%; max-width: 600px; }
-        .controls { display: flex; gap: 10px; margin-bottom: 20px; }
-        button { background: var(--accent); color: #000; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; }
-        button:disabled { opacity: 0.3; }
-        input { flex: 1; background: #000; border: 1px solid #444; color: #fff; padding: 10px; border-radius: 6px; }
-        #resultImage { width: 100%; border-radius: 8px; margin-top: 15px; display: none; image-rendering: pixelated; }
-        .status { font-family: monospace; font-size: 0.8rem; color: #888; margin-top: 10px; text-align: center; }
+        :root {
+            --accent: #00ffcc;
+            --accent2: #ff006e;
+            --bg: #080808;
+            --panel: #101010;
+            --border: #222;
+            --text: #e8e8e8;
+            --muted: #555;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Syne', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px 60px;
+            background-image:
+                radial-gradient(ellipse 60% 40% at 20% 10%, rgba(0,255,204,0.04) 0%, transparent 70%),
+                radial-gradient(ellipse 40% 30% at 80% 80%, rgba(255,0,110,0.04) 0%, transparent 70%);
+        }
+
+        header { text-align: center; margin-bottom: 36px; }
+
+        header h1 {
+            font-size: clamp(2rem, 5vw, 3.2rem);
+            font-weight: 800;
+            letter-spacing: -1px;
+            background: linear-gradient(135deg, var(--accent) 0%, #00b8ff 50%, var(--accent2) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        header p {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.72rem;
+            color: var(--muted);
+            margin-top: 6px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 28px;
+            width: 100%;
+            max-width: 640px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            opacity: 0.5;
+        }
+
+        .device-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 14px;
+            align-items: center;
+        }
+
+        .device-row label {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.72rem;
+            color: var(--muted);
+        }
+
+        .device-btn {
+            padding: 5px 12px;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.7rem;
+            transition: all 0.15s;
+        }
+
+        .device-btn.active {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .device-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        #initBtn {
+            width: 100%;
+            padding: 14px;
+            background: transparent;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            border-radius: 8px;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.9rem;
+            font-weight: 700;
+            cursor: pointer;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #initBtn::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: var(--accent);
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+            z-index: 0;
+        }
+
+        #initBtn:hover::before { transform: translateX(0); }
+        #initBtn:hover { color: #000; }
+        #initBtn span { position: relative; z-index: 1; }
+        #initBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+        #initBtn:disabled::before { display: none; }
+
+        #uiBody { display: none; margin-top: 24px; }
+
+        .drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: 10px;
+            padding: 28px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .drop-zone:hover, .drop-zone.drag-over {
+            border-color: var(--accent);
+            background: rgba(0,255,204,0.03);
+        }
+
+        .drop-zone input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+            width: 100%;
+            height: 100%;
+        }
+
+        .drop-zone .dz-label {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--muted);
+            pointer-events: none;
+        }
+
+        .drop-zone .dz-label strong { color: var(--accent); }
+
+        #previewWrap {
+            display: none;
+            margin-top: 14px;
+            position: relative;
+            border-radius: 8px;
+            overflow: hidden;
+            max-height: 260px;
+        }
+
+        #previewWrap img {
+            width: 100%;
+            max-height: 260px;
+            object-fit: contain;
+            border-radius: 8px;
+            background: #000;
+            display: block;
+        }
+
+        #clearImg {
+            position: absolute;
+            top: 8px; right: 8px;
+            background: rgba(0,0,0,0.7);
+            border: 1px solid #444;
+            color: #fff;
+            border-radius: 50%;
+            width: 28px; height: 28px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex; align-items: center; justify-content: center;
+            transition: background 0.2s;
+        }
+        #clearImg:hover { background: var(--accent2); }
+
+        .query-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 14px;
+        }
+
+        #queryInput {
+            flex: 1;
+            padding: 10px 14px;
+            background: #000;
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 8px;
+            font-family: 'Syne', sans-serif;
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        #queryInput:focus { border-color: var(--accent); }
+        #queryInput::placeholder { color: var(--muted); }
+
+        #analyzeBtn {
+            padding: 10px 18px;
+            background: var(--accent);
+            color: #000;
+            border: none;
+            border-radius: 8px;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.8rem;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+
+        #analyzeBtn:hover { opacity: 0.85; }
+        #analyzeBtn:active { transform: scale(0.97); }
+        #analyzeBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+        #resultBox { margin-top: 18px; display: none; }
+
+        #resultBox .res-label {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--accent);
+            margin-bottom: 8px;
+        }
+
+        #resultText {
+            background: #000;
+            padding: 16px;
+            border-radius: 8px;
+            border-left: 3px solid var(--accent);
+            font-size: 0.93rem;
+            line-height: 1.7;
+            color: var(--text);
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .status-bar {
+            margin-top: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #spinner {
+            display: none;
+            width: 14px; height: 14px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        #statusMsg {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.72rem;
+            color: var(--muted);
+        }
+
+        #statusMsg.error   { color: var(--accent2); }
+        #statusMsg.success { color: var(--accent); }
+
+        #progressWrap {
+            display: none;
+            margin-top: 14px;
+            background: #000;
+            border-radius: 4px;
+            overflow: hidden;
+            height: 4px;
+        }
+
+        #progressBar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent), #00b8ff);
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 4px;
+        }
+
+        #compatWarn {
+            display: none;
+            background: rgba(255,0,110,0.08);
+            border: 1px solid rgba(255,0,110,0.3);
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.72rem;
+            color: #ff6699;
+            line-height: 1.6;
+            margin-bottom: 16px;
+        }
     </style>
 </head>
 <body>
-    <h2>🎨 Janus-Pro Image Gen</h2>
+    <header>
+        <h1>👁 Janus-Pro</h1>
+        <p>Local Vision Analysis · WebGPU · No Server</p>
+    </header>
+
     <div class="card">
-        <button id="initBtn">🚀 Load Model (1.2GB)</button>
-        <div id="uiBody" style="display: none; margin-top: 20px;">
-            <div class="controls">
-                <input type="text" id="promptInput" placeholder="A futuristic cyberpunk city...">
-                <button id="genBtn">Generate</button>
-            </div>
-            <img id="resultImage" alt="Generated result">
+        <div id="compatWarn"></div>
+
+        <!-- WebGPU is ~5x faster but has a known ONNX EP bug on some hardware.
+             WASM (CPU) is slower but universally compatible. -->
+        <div class="device-row">
+            <label>Device:</label>
+            <button class="device-btn active" data-device="webgpu">WebGPU</button>
+            <button class="device-btn" data-device="wasm">WASM (CPU)</button>
         </div>
-        <div id="statusMsg" class="status">WebGPU required for best performance.</div>
+
+        <button id="initBtn"><span>⚡ Load Vision Model</span></button>
+
+        <div id="progressWrap"><div id="progressBar"></div></div>
+
+        <div id="uiBody">
+            <div class="drop-zone" id="dropZone">
+                <input type="file" id="fileInput" accept="image/*">
+                <div class="dz-label">
+                    <strong>Click or drop</strong> an image here<br>
+                    PNG · JPG · WEBP · GIF
+                </div>
+            </div>
+
+            <div id="previewWrap">
+                <img id="previewImg" alt="Preview">
+                <button id="clearImg" title="Remove image">✕</button>
+            </div>
+
+            <div class="query-row">
+                <input type="text" id="queryInput" placeholder="What is in this image?" maxlength="300">
+                <button id="analyzeBtn">Analyze</button>
+            </div>
+
+            <div id="resultBox">
+                <div class="res-label">Analysis</div>
+                <div id="resultText"></div>
+            </div>
+        </div>
+
+        <div class="status-bar">
+            <div id="spinner"></div>
+            <div id="statusMsg">Model not loaded.</div>
+        </div>
     </div>
 
-   <script type="module">
-    import { AutoProcessor, MultiModalityCausalLM, RawImage } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
-    let model, processor;
-    const statusMsg = document.getElementById('statusMsg');
+    <script type="module">
+        // ─────────────────────────────────────────────────────────────────────
+        // Transformers.js v4 · onnx-community/Janus-Pro-1B-ONNX
+        //
+        // Pipeline sourced directly from:
+        //   github.com/huggingface/transformers.js (v3.1.0 release notes)
+        //   — the Janus section shows the exact conversation format and API.
+        //
+        // KEY FACTS about this model's v4 API:
+        //
+        // 1. Import: AutoProcessor + MultiModalityCausalLM only.
+        //    Do NOT import RawImage — the processor handles image loading.
+        //
+        // 2. Conversation format (exact roles the model tokenizer expects):
+        //      role: 'User'       ← capital U, no angle-bracket wrappers
+        //      role: 'Assistant'  ← capital A, no angle-bracket wrappers
+        //    content is a plain string starting with "<image_placeholder>\n"
+        //    images is an array of URL strings, loaded internally by the processor.
+        //
+        // 3. Single processor(conversation) call does both chat-template
+        //    application AND image encoding. No separate tokenizer call needed.
+        //
+        // 4. Decode: processor.batch_decode() on sliced output_ids.
+        //    Slice: output_ids.slice(null, [inputs.input_ids.dims.at(-1), null])
+        // ─────────────────────────────────────────────────────────────────────
+        import {
+            AutoProcessor,
+            MultiModalityCausalLM,
+        } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
 
-    document.getElementById('initBtn').onclick = async (e) => {
-        e.target.disabled = true;
-        statusMsg.textContent = "Loading weights...";
-        const model_id = "onnx-community/Janus-Pro-1B-ONNX";
+        // DOM refs
+        const initBtn      = document.getElementById('initBtn');
+        const uiBody       = document.getElementById('uiBody');
+        const fileInput    = document.getElementById('fileInput');
+        const dropZone     = document.getElementById('dropZone');
+        const previewWrap  = document.getElementById('previewWrap');
+        const previewImg   = document.getElementById('previewImg');
+        const clearImg     = document.getElementById('clearImg');
+        const queryInput   = document.getElementById('queryInput');
+        const analyzeBtn   = document.getElementById('analyzeBtn');
+        const resultBox    = document.getElementById('resultBox');
+        const resultText   = document.getElementById('resultText');
+        const statusMsg    = document.getElementById('statusMsg');
+        const spinner      = document.getElementById('spinner');
+        const progressWrap = document.getElementById('progressWrap');
+        const progressBar  = document.getElementById('progressBar');
+        const compatWarn   = document.getElementById('compatWarn');
 
-        processor = await AutoProcessor.from_pretrained(model_id);
-        model = await MultiModalityCausalLM.from_pretrained(model_id, {
-            device: 'webgpu',
-            dtype: 'q4',
+        // State
+        let model            = null;
+        let processor        = null;
+        let selectedDevice   = 'webgpu';
+        let currentObjectURL = null;
+
+        // ── Device toggle ─────────────────────────────────────────────────────
+        document.querySelectorAll('.device-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.device-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                selectedDevice = btn.dataset.device;
+            });
         });
 
-        document.getElementById('uiBody').style.display = 'block';
-        e.target.style.display = 'none';
-        statusMsg.textContent = "Vision Ready.";
-    };
-
-    document.getElementById('analyzeBtn').onclick = async () => {
-        const file = document.getElementById('fileInput').files[0];
-        const query = document.getElementById('queryInput').value || "Describe this image.";
-        if (!file) return alert("Select an image first!");
-        statusMsg.textContent = "Processing image...";
-
-        try {
-            const image = await RawImage.fromURL(URL.createObjectURL(file));
-
-            const conversation = [
-                { role: 'user', content: '<image_placeholder>\n' + query }
-            ];
-
-            // Apply chat template to get the prompt string
-            const inputs = await processor(conversation, {
-                images: [image],
-                chat_template: 'text_generation',
-            });
-
-            const outputs = await model.generate({
-                ...inputs,
-                max_new_tokens: 128,
-            });
-
-            // outputs is a Tensor — convert to a nested JS array before batch_decode
-            const outputArray = outputs.tolist();  // converts Tensor → number[][]
-
-            const decoded = processor.batch_decode(outputArray, {
-                skip_special_tokens: true,
-            });
-
-            document.getElementById('resultText').textContent =
-                decoded[0].split('assistant\n').pop().trim();
-
-            statusMsg.textContent = "Complete.";
-        } catch (err) {
-            console.error(err);
-            statusMsg.textContent = "Error: " + err.message;
+        // ── Helpers ───────────────────────────────────────────────────────────
+        function setStatus(msg, type = '') {
+            statusMsg.textContent = msg;
+            statusMsg.className = type;
         }
-    };
-</script></body>
+        function setLoading(active) {
+            spinner.style.display = active ? 'block' : 'none';
+        }
+        function setProgress(pct) {
+            if (pct === null) {
+                progressWrap.style.display = 'none';
+                progressBar.style.width = '0%';
+            } else {
+                progressWrap.style.display = 'block';
+                progressBar.style.width = Math.min(pct, 100) + '%';
+            }
+        }
+
+        // ── WebGPU check ──────────────────────────────────────────────────────
+        async function checkCompat() {
+            if (!navigator.gpu) {
+                compatWarn.innerHTML =
+                    '⚠️ WebGPU not available (requires Chrome 113+ / Edge 113+ on desktop).<br>' +
+                    'Auto-switched to <strong>WASM (CPU)</strong> — slower but will work.';
+                compatWarn.style.display = 'block';
+                document.querySelectorAll('.device-btn').forEach(b => {
+                    b.classList.toggle('active', b.dataset.device === 'wasm');
+                });
+                selectedDevice = 'wasm';
+                return;
+            }
+            try {
+                const adapter = await navigator.gpu.requestAdapter();
+                if (!adapter) {
+                    compatWarn.innerHTML =
+                        '⚠️ No WebGPU adapter found. If loading fails, switch to <strong>WASM (CPU)</strong>.';
+                    compatWarn.style.display = 'block';
+                }
+            } catch (e) {
+                compatWarn.innerHTML = '⚠️ WebGPU probe error: ' + e.message;
+                compatWarn.style.display = 'block';
+            }
+        }
+        await checkCompat();
+
+        // ── Load model ────────────────────────────────────────────────────────
+        initBtn.addEventListener('click', async () => {
+            initBtn.disabled = true;
+            document.querySelectorAll('.device-btn').forEach(b => b.disabled = true);
+            setLoading(true);
+            setStatus('Initialising…');
+            setProgress(0);
+
+            const MODEL_ID = "onnx-community/Janus-Pro-1B-ONNX";
+
+            const progressCallback = (info) => {
+                if (info.status === 'progress' && info.total) {
+                    const pct = (info.loaded / info.total) * 100;
+                    setProgress(pct);
+                    const mb    = (info.loaded / 1_048_576).toFixed(1);
+                    const total = (info.total  / 1_048_576).toFixed(1);
+                    setStatus(`↓ ${info.file}  ${mb} / ${total} MB`);
+                } else if (info.status === 'initiate') {
+                    setStatus(`Fetching: ${info.file}`);
+                } else if (info.status === 'done') {
+                    setStatus(`✓ ${info.file}`);
+                }
+            };
+
+            try {
+                processor = await AutoProcessor.from_pretrained(MODEL_ID, {
+                    progress_callback: progressCallback,
+                });
+
+                // dtype map from the official onnx-community model card.
+                // q4 for text, fp16 for vision heads, fp32 for image decode.
+                model = await MultiModalityCausalLM.from_pretrained(MODEL_ID, {
+                    device: selectedDevice,
+                    dtype: {
+                        prepare_inputs_embeds: 'q4',
+                        language_model:        'q4',
+                        lm_head:               'fp16',
+                        gen_head:              'fp16',
+                        gen_img_embeds:        'fp16',
+                        image_decode:          'fp32',
+                    },
+                    progress_callback: progressCallback,
+                });
+
+                setProgress(100);
+                setTimeout(() => setProgress(null), 800);
+                setLoading(false);
+                setStatus(`✓ Ready on ${selectedDevice.toUpperCase()} — drop an image to begin.`, 'success');
+                initBtn.style.display = 'none';
+                uiBody.style.display = 'block';
+
+            } catch (err) {
+                console.error(err);
+                setLoading(false);
+                setProgress(null);
+                initBtn.disabled = false;
+                document.querySelectorAll('.device-btn').forEach(b => b.disabled = false);
+                const hint = selectedDevice === 'webgpu' ? ' · Try switching to WASM (CPU)' : '';
+                setStatus(`✗ ${err.message}${hint}`, 'error');
+            }
+        });
+
+        // ── Image preview ─────────────────────────────────────────────────────
+        function showPreview(file) {
+            if (currentObjectURL) URL.revokeObjectURL(currentObjectURL);
+            currentObjectURL = URL.createObjectURL(file);
+            previewImg.src = currentObjectURL;
+            previewWrap.style.display = 'block';
+            dropZone.style.display = 'none';
+            resultBox.style.display = 'none';
+        }
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files[0]) showPreview(fileInput.files[0]);
+        });
+
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            const f = e.dataTransfer.files[0];
+            if (f && f.type.startsWith('image/')) {
+                const dt = new DataTransfer();
+                dt.items.add(f);
+                fileInput.files = dt.files;
+                showPreview(f);
+            }
+        });
+
+        clearImg.addEventListener('click', () => {
+            if (currentObjectURL) { URL.revokeObjectURL(currentObjectURL); currentObjectURL = null; }
+            previewImg.src = '';
+            previewWrap.style.display = 'none';
+            dropZone.style.display = 'block';
+            fileInput.value = '';
+            resultBox.style.display = 'none';
+        });
+
+        // ── Analyse ───────────────────────────────────────────────────────────
+        analyzeBtn.addEventListener('click', async () => {
+            const file = fileInput.files[0];
+            if (!file)  { setStatus('⚠️ Select an image first.', 'error');  return; }
+            if (!model) { setStatus('⚠️ Model not loaded yet.', 'error'); return; }
+
+            const query = queryInput.value.trim() || 'Describe this image in detail.';
+            analyzeBtn.disabled = true;
+            setLoading(true);
+            setStatus('Processing…');
+            resultBox.style.display = 'none';
+
+            // Object URL is created here and kept alive until processor() is done,
+            // then immediately revoked to free memory.
+            let blobURL = null;
+
+            try {
+                blobURL = URL.createObjectURL(file);
+
+                // ── Conversation format (official Janus-Pro-1B-ONNX API) ──────
+                // Source: HuggingFace transformers.js v3.1 release notes, Janus section
+                //   role 'User'      / 'Assistant'  — exact casing the model expects
+                //   images: [url]    — string URL, processor loads it internally
+                //   content string   — must start with <image_placeholder>
+                const conversation = [
+                    {
+                        role: 'User',
+                        content: '<image_placeholder>\n' + query,
+                        images: [blobURL],
+                    },
+                    {
+                        role: 'Assistant',
+                        content: '',
+                    },
+                ];
+
+                // Single call: applies chat template + encodes image
+                const inputs = await processor(conversation);
+
+                // Done with the blob — revoke before the (slower) generate step
+                URL.revokeObjectURL(blobURL);
+                blobURL = null;
+
+                // Generate
+                setStatus('Generating…');
+                const output_ids = await model.generate({
+                    ...inputs,
+                    max_new_tokens: 256,
+                    do_sample: false,
+                });
+
+                // Decode only new tokens (trim the prompt prefix)
+                const prompt_len = inputs.input_ids.dims.at(-1);
+                const new_tokens = output_ids.slice(null, [prompt_len, null]);
+                const decoded    = processor.batch_decode(new_tokens, {
+                    skip_special_tokens: true,
+                });
+
+                const answer = (decoded[0] || '').trim() || '(No response generated)';
+                resultText.textContent = answer;
+                resultBox.style.display = 'block';
+                setStatus('✓ Done.', 'success');
+
+            } catch (err) {
+                console.error(err);
+                if (blobURL) URL.revokeObjectURL(blobURL);
+                setStatus(`✗ Error: ${err.message}`, 'error');
+            } finally {
+                setLoading(false);
+                analyzeBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
 </html>
