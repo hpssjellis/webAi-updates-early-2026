@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Janus-Pro Browser Multimodal</title>
+    <style>
+        :root { --accent: #00ffcc; --bg: #0d0d0d; --panel: #161616; }
+        body { background: var(--bg); color: #eee; font-family: system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        
+        #mainContainer { width: 100%; max-width: 800px; display: grid; grid-template-columns: 1fr; gap: 20px; }
+        
+        .card { background: var(--panel); border: 1px solid #333; border-radius: 12px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        
+        h2 { color: var(--accent); margin-bottom: 15px; text-align: center; }
+
+        /* ── UI Elements ────────────────────────────────────────────── */
+        .controls { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 20px; }
+        button { background: var(--accent); color: #000; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:disabled { opacity: 0.3; cursor: not-allowed; }
+        input[type="text"] { flex: 1; background: #000; border: 1px solid #444; color: #fff; padding: 10px; border-radius: 6px; min-width: 250px; }
+
+        #outputArea { display: flex; flex-direction: column; align-items: center; gap: 15px; margin-top: 15px; }
+        #resultImage { max-width: 100%; border-radius: 8px; border: 2px solid #333; display: none; }
+        #resultText { background: #000; padding: 15px; border-radius: 8px; width: 100%; white-space: pre-wrap; display: none; }
+
+        .status { font-family: monospace; font-size: 0.85rem; color: #888; text-align: center; margin-top: 10px; }
+        .badge { padding: 4px 10px; border-radius: 20px; font-weight: bold; font-size: 0.75rem; background: #222; }
+        .active-gpu { color: var(--accent); border: 1px solid var(--accent); }
+    </style>
+</head>
+<body>
+
+    <h2>🎨 Janus-Pro Multimodal (Vision + Gen)</h2>
+
+    <div id="mainContainer">
+        <div class="card">
+            <div class="controls">
+                <button id="initBtn" onclick="window.initApp()">🚀 Load Janus-Pro-1B</button>
+                <span id="gpuBadge" class="badge">Checking WebGPU...</span>
+            </div>
+            
+            <div id="uiBody" style="display: none;">
+                <div class="controls">
+                    <input type="text" id="promptInput" placeholder="Describe an image to generate or ask about a file...">
+                    <button id="genBtn" onclick="window.generateImage()">🖼️ Generate</button>
+                    <button id="visionBtn" onclick="document.getElementById('fileInput').click()">👁️ Ask Vision</button>
+                    <input type="file" id="fileInput" style="display: none;" onchange="window.analyzeImage(this)">
+                </div>
+
+                <div id="outputArea">
+                    <img id="resultImage" alt="Generated result">
+                    <div id="resultText"></div>
+                </div>
+            </div>
+            
+            <div id="statusMsg" class="status">Click load to download the model (~1.2GB). WebGPU highly recommended.</div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { AutoProcessor, MultiModalityCausalLM, RawImage } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
+
+        let model, processor;
+        const statusEl = document.getElementById('statusMsg');
+        const imgEl = document.getElementById('resultImage');
+        const textEl = document.getElementById('resultText');
+
+        // Check for WebGPU immediately
+        if (navigator.gpu) {
+            document.getElementById('gpuBadge').textContent = "WebGPU Available";
+            document.getElementById('gpuBadge').classList.add('active-gpu');
+        }
+
+        window.initApp = async () => {
+            document.getElementById('initBtn').disabled = true;
+            statusEl.textContent = "⬇️ Fetching model and processor...";
+            
+            try {
+                const model_id = "onnx-community/Janus-Pro-1B-ONNX";
+                
+                // 1. Load Processor
+                processor = await AutoProcessor.from_pretrained(model_id);
+                
+                // 2. Load Model (Using 4-bit quantization for browser memory safety)
+                model = await MultiModalityCausalLM.from_pretrained(model_id, {
+                    device: 'webgpu',
+                    dtype: 'q4', // Critical for 1B models in browser
+                    progress_callback: p => {
+                        if (p.status === 'progress') {
+                            statusEl.textContent = `Downloading: ${Math.round(p.loaded / 1024 / 1024)}MB / ${Math.round(p.total / 1024 / 1024)}MB`;
+                        }
+                    }
+                });
+
+                statusEl.textContent = "🟢 Ready! Enter a prompt below.";
+                document.getElementById('uiBody').style.display = 'block';
+                document.getElementById('initBtn').style.display = 'none';
+            } catch (err) {
+                statusEl.textContent = "❌ Error: " + err.message;
+                console.error(err);
+            }
+        };
+
+        window.generateImage = async () => {
+            const prompt = document.getElementById('promptInput').value;
+            if (!prompt) return;
+            
+            setLoading(true, "🎨 Generating image (may take 20-40s)...");
+            
+            try {
+                // Prepare inputs for Image Generation template
+                const inputs = await processor(prompt, { chat_template: "text_to_image" });
+                
+                // Janus uses exactly 576 tokens (24x24) for its images
+                const num_image_tokens = 576;
+                const outputs = await model.generate_images({
+                    ...inputs,
+                    min_new_tokens: num_image_tokens,
+                    max_new_tokens: num_image_tokens,
+                    do_sample: true,
+                });
+
+                const blob = await outputs[0].toBlob();
+                imgEl.src = URL.createObjectURL(blob);
+                imgEl.style.display = 'block';
+                textEl.style.display = 'none';
+            } catch (err) {
+                alert("Generation failed: " + err.message);
+            } finally {
+                setLoading(false, "🟢 Done.");
+            }
+        };
+
+        window.analyzeImage = async (input) => {
+            if (!input.files || !input.files[0]) return;
+            const prompt = document.getElementById('promptInput').value || "Describe this image in detail.";
+            
+            setLoading(true, "👁️ Analyzing image...");
+            
+            try {
+                const image = await RawImage.fromURL(URL.createObjectURL(input.files[0]));
+                const conversation = [{
+                    role: "<|User|>",
+                    content: `<image_placeholder>\n${prompt}`,
+                    images: [image]
+                }];
+
+                const inputs = await processor(conversation);
+                const outputs = await model.generate({ ...inputs, max_new_tokens: 128 });
+                
+                // Decode and clean the response
+                const response = processor.batch_decode(outputs, { skip_special_tokens: true });
+                textEl.textContent = response[0];
+                textEl.style.display = 'block';
+                imgEl.style.display = 'none';
+            } catch (err) {
+                alert("Vision analysis failed: " + err.message);
+            } finally {
+                setLoading(false, "🟢 Done.");
+            }
+        };
+
+        function setLoading(isLoading, msg) {
+            statusEl.textContent = msg;
+            document.getElementById('genBtn').disabled = isLoading;
+            document.getElementById('visionBtn').disabled = isLoading;
+        }
+    </script>
+</body>
+</html>
