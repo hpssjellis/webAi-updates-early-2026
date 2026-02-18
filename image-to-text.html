@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Janus-Pro | Vision Analysis</title>
+    <style>
+        :root { --accent: #00ffcc; --bg: #0d0d0d; --panel: #161616; }
+        body { background: var(--bg); color: #eee; font-family: system-ui; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .card { background: var(--panel); border: 1px solid #333; border-radius: 12px; padding: 20px; width: 100%; max-width: 600px; }
+        #resultText { background: #000; padding: 15px; border-radius: 8px; margin-top: 15px; min-height: 50px; line-height: 1.5; border-left: 3px solid var(--accent); }
+        .status { font-family: monospace; font-size: 0.8rem; color: #888; margin-top: 10px; }
+        button { background: var(--accent); color: #000; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; }
+        input[type="file"] { margin: 15px 0; color: #888; }
+    </style>
+</head>
+<body>
+    <h2>👁️ Janus-Pro Vision</h2>
+    <div class="card">
+        <button id="initBtn">🚀 Load Vision Model</button>
+        <div id="uiBody" style="display: none; margin-top: 20px;">
+            <input type="file" id="fileInput" accept="image/*">
+            <input type="text" id="queryInput" placeholder="What is in this image?" style="width:96%; padding:10px; margin-bottom:10px; background:#000; border:1px solid #444; color:#fff; border-radius:6px;">
+            <button id="analyzeBtn">Analyze Image</button>
+            <div id="resultText">Analysis will appear here...</div>
+        </div>
+        <div id="statusMsg" class="status"></div>
+    </div>
+
+    <script type="module">
+        import { AutoProcessor, MultiModalityCausalLM, RawImage } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
+
+        let model, processor;
+        const statusMsg = document.getElementById('statusMsg');
+
+        document.getElementById('initBtn').onclick = async (e) => {
+            e.target.disabled = true;
+            statusMsg.textContent = "Loading weights...";
+            const model_id = "onnx-community/Janus-Pro-1B-ONNX";
+            
+            processor = await AutoProcessor.from_pretrained(model_id);
+            model = await MultiModalityCausalLM.from_pretrained(model_id, {
+                device: 'webgpu',
+                dtype: 'q4',
+            });
+            
+            document.getElementById('uiBody').style.display = 'block';
+            e.target.style.display = 'none';
+            statusMsg.textContent = "Vision Ready.";
+        };
+
+        document.getElementById('analyzeBtn').onclick = async () => {
+            const file = document.getElementById('fileInput').files[0];
+            const query = document.getElementById('queryInput').value || "Describe this image.";
+            if (!file) return alert("Select an image first!");
+
+            statusMsg.textContent = "Processing image...";
+            try {
+                const image = await RawImage.fromURL(URL.createObjectURL(file));
+                const messages = [
+                    { role: 'user', content: '<image_placeholder>\n' + query }
+                ];
+
+                const inputs = await processor(messages, { images: [image] });
+                const outputs = await model.generate({
+                    ...inputs,
+                    max_new_tokens: 128,
+                });
+
+                const text = processor.batch_decode(outputs, { skip_special_tokens: true });
+                document.getElementById('resultText').textContent = text[0].split('assistant\n').pop();
+                statusMsg.textContent = "Complete.";
+            } catch (err) {
+                statusMsg.textContent = "Error: " + err.message;
+            }
+        };
+    </script>
+</body>
+</html>
