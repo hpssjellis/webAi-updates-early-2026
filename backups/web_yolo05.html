@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<body style="background:#111; color:#eee; text-align:center; font-family:sans-serif; padding:20px">
+    <h2 style="color: #00ffcc;">Live YOLO Detection (Transformers.js v4)</h2>
+    <div style="position: relative; display: inline-block; width: 480px; height: 360px; background: #000;">
+        <video id="myCam" autoplay playsinline style="width:480px; height:360px; border:2px solid #444; object-fit:cover;"></video>
+        <canvas id="myDraw" width="480" height="360" style="position:absolute; left:0; top:0; pointer-events:none;"></canvas>
+    </div>
+    <br><br>
+    <button id="myGoButton" onclick="window.myStartApp()" style="padding:10px 20px; font-size:1rem; cursor:pointer; background:#00ffcc; border:none; border-radius:4px; font-weight:bold;">
+        Start Camera & AI
+    </button>
+    <div id="myStatus" style="margin-top:10px; font-family:monospace; color:#aaa;">Ready to load...</div>
+
+    <script type="module">
+        import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
+
+        // ── Config ──────────────────────────────────────────────────────────
+        env.allowLocalModels  = false;
+        env.useBrowserCache   = true;
+
+        // ── DOM refs ────────────────────────────────────────────────────────
+        const myCam    = document.getElementById("myCam");
+        const myDraw   = document.getElementById("myDraw");
+        const myCtx    = myDraw.getContext("2d");
+        const myStatus = document.getElementById("myStatus");
+
+        let myDetector  = null;
+        let myIsRunning = false;
+
+        // ── Start webcam ────────────────────────────────────────────────────
+        window.myStartCam = async function () {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { width: 480, height: 360 }
+            });
+            myCam.srcObject = stream;
+            return new Promise(resolve => myCam.onloadedmetadata = resolve);
+        };
+
+        // ── Detection loop ──────────────────────────────────────────────────
+        window.myDetectionLoop = async function () {
+            if (!myIsRunning) return;
+
+            myCtx.clearRect(0, 0, myDraw.width, myDraw.height);
+
+            try {
+                // Pass the video element directly; percentage:true → 0-100 coords
+                const results = await myDetector(myCam, {
+                    threshold: 0.4,
+                    percentage: true
+                });
+
+                myCtx.lineWidth   = 2;
+                myCtx.font        = "bold 14px Arial";
+
+                results.forEach(obj => {
+                    const { xmin, ymin, xmax, ymax } = obj.box;
+
+                    const x = (xmin / 100) * myDraw.width;
+                    const y = (ymin / 100) * myDraw.height;
+                    const w = ((xmax - xmin) / 100) * myDraw.width;
+                    const h = ((ymax - ymin) / 100) * myDraw.height;
+
+                    // Box
+                    myCtx.strokeStyle = "#00ffcc";
+                    myCtx.strokeRect(x, y, w, h);
+
+                    // Label background
+                    const label = `${obj.label} ${Math.round(obj.score * 100)}%`;
+                    const textW  = myCtx.measureText(label).width;
+                    const textY  = y > 22 ? y - 4 : y + h + 18;
+                    myCtx.fillStyle = "rgba(0,0,0,0.55)";
+                    myCtx.fillRect(x, textY - 14, textW + 6, 18);
+
+                    // Label text  ← NOTE: fillText( not fillText`
+                    myCtx.fillStyle = "#00ffcc";
+                    myCtx.fillText(label, x + 3, textY);
+                });
+
+            } catch (err) {
+                console.error("Inference error:", err);
+            }
+
+            requestAnimationFrame(window.myDetectionLoop);
+        };
+
+        // ── Entry point (called by button onclick) ──────────────────────────
+        window.myStartApp = async function () {
+            document.getElementById("myGoButton").disabled = true;
+
+            myStatus.textContent = "Requesting camera…";
+            await window.myStartCam();
+
+            // ✅ Use Xenova/yolos-tiny — public, no auth needed, works great
+            // Alternatives: "Xenova/detr-resnet-50"  (heavier but accurate)
+            myStatus.textContent = "Loading model — first run downloads ~25 MB, please wait…";
+            myDetector = await pipeline("object-detection", "Xenova/yolos-tiny", {
+                progress_callback: p => {
+                    if (p.status === "progress") {
+                        const pct = Math.round((p.loaded / p.total) * 100);
+                        myStatus.textContent = `Downloading model: ${pct}%`;
+                    }
+                }
+            });
+
+            myStatus.textContent = "🟢 AI Active";
+            document.getElementById("myGoButton").style.display = "none";
+            myIsRunning = true;
+            window.myDetectionLoop();
+        };
+    </script>
+</body>
+</html>
