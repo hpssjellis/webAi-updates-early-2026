@@ -2,97 +2,118 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Node Lab: Vision AI v4</title>
-    <style>
-        body { font-family: sans-serif; background: #121212; color: #eee; text-align: center; padding: 20px; }
-        .myViewport { position: relative; display: inline-block; border: 2px solid #333; margin: 20px; background: #000; }
-        #myImage { max-width: 100%; height: auto; display: block; }
-        #myCanvas { position: absolute; top: 0; left: 0; pointer-events: none; }
-        .myBtn { background: #0d6efd; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 1rem; }
-        .myBtn:disabled { background: #444; cursor: wait; }
-        #myStatus { color: #4ec9b0; margin: 10px; font-family: monospace; }
-    </style>
+    <title>YOLO Object Detection v4</title>
 </head>
-<body>
+<body style="font-family: sans-serif; padding: 20px; background: #1a1a1a; color: #eee; max-width: 900px; margin: auto;">
 
-    <h2>👁️ YOLOv8 Object Detection</h2>
+    <h2 style="color: #00ffcc; border-bottom: 1px solid #333; padding-bottom: 10px;">YOLO v4 Object Detection</h2>
     
-    <div class="myViewport">
-        <img id="myImage"
-             src="https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/cats.jpg"
-             crossorigin="anonymous">
-        <canvas id="myCanvas"></canvas>
+    <div style="margin-bottom: 20px; background: #2a2a2a; padding: 15px; border-radius: 8px;">
+        <p style="margin-top: 0;">1. Select an Image:</p>
+        <input type="file" id="myImageInput" accept="image/*" onchange="myHandleImageUpload(event)" style="margin-bottom: 10px;">
+        <br>
+        <button id="myRunButton" onclick="myDetectObjects()" disabled style="padding: 10px 20px; background: #00ffcc; color: #000; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Detect Objects</button>
+        <span id="myStatus" style="margin-left: 15px; font-size: 0.9em; color: #aaa;">Waiting for image...</span>
     </div>
 
-    <div>
-        <div id="myStatus">Initializing Engine...</div>
-        <button class="myBtn" id="myRunButton" onclick="myStartDetection()" disabled>Please Wait...</button>
+    <div id="myContainer" style="position: relative; display: inline-block; background: #000; border-radius: 8px; overflow: hidden;">
+        <img id="myDisplayImage" style="max-width: 100%; display: block;">
+        <canvas id="myCanvas" style="position: absolute; top: 0; left: 0;"></canvas>
     </div>
 
     <script type="module">
-        import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.3";
+        // Import the pipeline from the specific next.4 CDN
+        import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4';
 
-        // REQUIRED for browser use in v4
-        env.allowLocalModels = false;
-        env.useBrowserCache = true;
-        env.remoteHost = "https://huggingface.co";
-        env.remotePathTemplate = "{model}/resolve/{revision}/";
+        let myDetector;
+        const myImageElement = document.getElementById('myDisplayImage');
+        const myCanvas = document.getElementById('myCanvas');
+        const myStatus = document.getElementById('myStatus');
+        const myRunButton = document.getElementById('myRunButton');
 
-        async function myStartDetection() {
-            const myStatus = document.getElementById('myStatus');
-            const myButton = document.getElementById('myRunButton');
-            const myImage = document.getElementById('myImage');
-            const myCanvas = document.getElementById('myCanvas');
-            const myCtx = myCanvas.getContext('2d');
+        // Load the model as soon as the module starts
+        (async function myInitializeModel() {
+            myStatus.innerText = "Loading YOLO model (approx 25MB)...";
+            try {
+                // Using yolos-tiny for fast browser performance
+                myDetector = await pipeline('object-detection', 'Xenova/yolos-tiny');
+                myStatus.innerText = "Model Ready. Please upload an image.";
+            } catch (myError) {
+                myStatus.innerText = "Error loading model: " + myError.message;
+            }
+        })();
 
-            myButton.disabled = true;
-            myStatus.innerText = "🌀 Running AI Analysis...";
+        // Handle the file upload
+        window.myHandleImageUpload = function(myEvent) {
+            const myFile = myEvent.target.files[0];
+            if (!myFile) return;
+
+            const myReader = new FileReader();
+            myReader.onload = function(e) {
+                myImageElement.src = e.target.result;
+                myImageElement.onload = () => {
+                    // Sync canvas size to image size
+                    myCanvas.width = myImageElement.clientWidth;
+                    myCanvas.height = myImageElement.clientHeight;
+                    myRunButton.disabled = false;
+                    myStatus.innerText = "Image loaded. Click Detect.";
+                };
+            };
+            myReader.readAsDataURL(myFile);
+        };
+
+        // The Main Detection Logic
+        window.myDetectObjects = async function() {
+            if (!myDetector) return;
+
+            myStatus.innerText = "Detecting...";
+            myRunButton.disabled = true;
+
+            // Clear previous drawings
+            const myContext = myCanvas.getContext('2d');
+            myContext.clearRect(0, 0, myCanvas.width, myCanvas.height);
 
             try {
-                // WAIT FOR IMAGE TO BE LOADED
-                await myImage.decode();
-
-                // Resize canvas to match actual pixel size
-                myCanvas.width = myImage.naturalWidth;
-                myCanvas.height = myImage.naturalHeight;
-
-                // Load YOLOv8
-                const myDetector = await pipeline("object-detection", "Xenova/yolov8n");
-
-                // Run detection
-                const myResults = await myDetector(myImage);
-
-                // Draw boxes
-                myCtx.clearRect(0, 0, myCanvas.width, myCanvas.height);
-
-                myResults.forEach(r => {
-                    const { xmin, ymin, xmax, ymax } = r.box;
-
-                    myCtx.strokeStyle = "#00ff00";
-                    myCtx.lineWidth = 4;
-                    myCtx.strokeRect(xmin, ymin, xmax - xmin, ymax - ymin);
-
-                    myCtx.fillStyle = "#00ff00";
-                    myCtx.font = "bold 22px Arial";
-                    myCtx.fillText(`${r.label} (${(r.score*100).toFixed(1)}%)`, xmin, ymin - 8);
+                // Run the model on the image source
+                const myResults = await myDetector(myImageElement.src, {
+                    threshold: 0.5, // Only show objects with > 50% confidence
+                    percentage: true // Get coordinates in % so we can scale to canvas
                 });
 
-                myStatus.innerText = `✅ Found ${myResults.length} objects.`;
-            } catch (err) {
-                myStatus.innerText = "❌ Error: " + err.message;
-                console.error(err);
-            } finally {
-                myButton.disabled = false;
+                // Draw the boxes
+                myContext.strokeStyle = "#00ffcc";
+                myContext.lineWidth = 3;
+                myContext.font = "16px sans-serif";
+                myContext.fillStyle = "#00ffcc";
+
+                myResults.forEach(myPrediction => {
+                    const { xmin, ymin, xmax, ymax } = myPrediction.box;
+                    
+                    // Convert percentage to actual pixels
+                    const myLeft = (xmin / 100) * myCanvas.width;
+                    const myTop = (ymin / 100) * myCanvas.height;
+                    const myWidth = ((xmax - xmin) / 100) * myCanvas.width;
+                    const myHeight = ((ymax - ymin) / 100) * myCanvas.height;
+
+                    // Draw the rectangle
+                    myContext.strokeRect(myLeft, myTop, myWidth, myHeight);
+                    
+                    // Draw the label background
+                    myContext.fillText(
+                        `${myPrediction.label} (${Math.round(myPrediction.score * 100)}%)`, 
+                        myLeft, 
+                        myTop > 20 ? myTop - 5 : myTop + 20
+                    );
+                });
+
+                myStatus.innerText = `Found ${myResults.length} objects.`;
+                myRunButton.disabled = false;
+
+            } catch (myError) {
+                myStatus.innerText = "Detection Error: " + myError.message;
+                myRunButton.disabled = false;
             }
-        }
-
-        // Expose to HTML
-        window.myStartDetection = myStartDetection;
-
-        // Enable button once module loads
-        document.getElementById('myRunButton').disabled = false;
-        document.getElementById('myRunButton').innerText = "Start AI Analysis";
-        document.getElementById('myStatus').innerText = "Engine Ready.";
+        };
     </script>
 </body>
 </html>
