@@ -27,66 +27,52 @@
     </div>
 
     <script type="module">
-    import { AutoProcessor, MultiModalityCausalLM, RawImage } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
-    let model, processor;
-    const statusMsg = document.getElementById('statusMsg');
+        import { AutoProcessor, MultiModalityCausalLM, RawImage } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
 
-    document.getElementById('initBtn').onclick = async (e) => {
-        e.target.disabled = true;
-        statusMsg.textContent = "Loading weights...";
-        const model_id = "onnx-community/Janus-Pro-1B-ONNX";
+        let model, processor;
+        const statusMsg = document.getElementById('statusMsg');
 
-        processor = await AutoProcessor.from_pretrained(model_id);
-        model = await MultiModalityCausalLM.from_pretrained(model_id, {
-            device: 'webgpu',
-            dtype: 'q4',
-        });
-
-        document.getElementById('uiBody').style.display = 'block';
-        e.target.style.display = 'none';
-        statusMsg.textContent = "Vision Ready.";
-    };
-
-    document.getElementById('analyzeBtn').onclick = async () => {
-        const file = document.getElementById('fileInput').files[0];
-        const query = document.getElementById('queryInput').value || "Describe this image.";
-        if (!file) return alert("Select an image first!");
-        statusMsg.textContent = "Processing image...";
-
-        try {
-            const image = await RawImage.fromURL(URL.createObjectURL(file));
-
-            const conversation = [
-                { role: 'user', content: '<image_placeholder>\n' + query }
-            ];
-
-            // Apply chat template to get the prompt string
-            const inputs = await processor(conversation, {
-                images: [image],
-                chat_template: 'text_generation',
+        document.getElementById('initBtn').onclick = async (e) => {
+            e.target.disabled = true;
+            statusMsg.textContent = "Loading weights...";
+            const model_id = "onnx-community/Janus-Pro-1B-ONNX";
+            
+            processor = await AutoProcessor.from_pretrained(model_id);
+            model = await MultiModalityCausalLM.from_pretrained(model_id, {
+                device: 'webgpu',
+                dtype: 'q4',
             });
+            
+            document.getElementById('uiBody').style.display = 'block';
+            e.target.style.display = 'none';
+            statusMsg.textContent = "Vision Ready.";
+        };
 
-            const outputs = await model.generate({
-                ...inputs,
-                max_new_tokens: 128,
-            });
+        document.getElementById('analyzeBtn').onclick = async () => {
+            const file = document.getElementById('fileInput').files[0];
+            const query = document.getElementById('queryInput').value || "Describe this image.";
+            if (!file) return alert("Select an image first!");
 
-            // outputs is a Tensor — convert to a nested JS array before batch_decode
-            const outputArray = outputs.tolist();  // converts Tensor → number[][]
+            statusMsg.textContent = "Processing image...";
+            try {
+                const image = await RawImage.fromURL(URL.createObjectURL(file));
+                const messages = [
+                    { role: 'user', content: '<image_placeholder>\n' + query }
+                ];
 
-            const decoded = processor.batch_decode(outputArray, {
-                skip_special_tokens: true,
-            });
+                const inputs = await processor(messages, { images: [image] });
+                const outputs = await model.generate({
+                    ...inputs,
+                    max_new_tokens: 128,
+                });
 
-            document.getElementById('resultText').textContent =
-                decoded[0].split('assistant\n').pop().trim();
-
-            statusMsg.textContent = "Complete.";
-        } catch (err) {
-            console.error(err);
-            statusMsg.textContent = "Error: " + err.message;
-        }
-    };
-</script>
+                const text = processor.batch_decode(outputs, { skip_special_tokens: true });
+                document.getElementById('resultText').textContent = text[0].split('assistant\n').pop();
+                statusMsg.textContent = "Complete.";
+            } catch (err) {
+                statusMsg.textContent = "Error: " + err.message;
+            }
+        };
+    </script>
 </body>
 </html>
