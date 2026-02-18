@@ -284,11 +284,20 @@
 
             mySnapCtx.drawImage(myCam, 0, 0, mySnap.width, mySnap.height);
 
-            RawImage.fromCanvas(mySnap)
-                .then(frame => myDetector(frame, {
+            // RawImage.fromCanvas is SYNCHRONOUS in v4 — no .then()
+            let frame;
+            try {
+                frame = RawImage.fromCanvas(mySnap);
+            } catch (err) {
+                console.error("RawImage error:", err);
+                myInferring = false;
+                return;
+            }
+
+            myDetector(frame, {
                     threshold:  0.15,   // keep low — visible threshold set by slider at draw time
                     percentage: true
-                }))
+                })
                 .then(results => {
                     myLastBoxes = results;
                     myInferCount++;
