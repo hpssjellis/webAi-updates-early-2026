@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AI Semantic Photo Gallery</title>
+    <style>
+        :root { --primary: #7c3aed; --bg: #0f172a; --card: #1e293b; }
+        body { background: var(--bg); color: #f8fafc; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .container { width: 100%; max-width: 900px; }
+        .card { background: var(--card); border-radius: 12px; padding: 25px; border: 1px solid #334155; }
+        
+        /* Search Bar Area */
+        .search-box { display: flex; gap: 10px; margin: 20px 0; }
+        input[type="text"] { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: white; }
+        
+        /* Gallery Grid */
+        #gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; margin-top: 20px; }
+        .photo-card { position: relative; border-radius: 8px; overflow: hidden; border: 2px solid transparent; transition: 0.3s; background: #000; height: 180px; }
+        .photo-card img { width: 100%; height: 100%; object-fit: cover; }
+        .photo-card.match { border-color: #10b981; transform: scale(1.05); z-index: 10; box-shadow: 0 0 15px rgba(16, 185, 129, 0.5); }
+        .photo-card.dim { opacity: 0.3; filter: grayscale(1); }
+        .score-badge { position: absolute; bottom: 5px; right: 5px; background: rgba(0,0,0,0.7); font-size: 10px; padding: 2px 5px; border-radius: 4px; }
+
+        .status { font-family: monospace; font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px; }
+        button { background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        button:disabled { background: #475569; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="card">
+        <h1>📸 Semantic Photo Search</h1>
+        <div id="status" class="status">Click to load the CLIP model (~150MB).</div>
+        
+        <div id="setup">
+            <button id="loadBtn">🚀 Load AI Engine</button>
+        </div>
+
+        <div id="mainUI" style="display:none">
+            <div class="search-box">
+                <button onclick="document.getElementById('fileInput').click()">📁 Upload Photos</button>
+                <input type="file" id="fileInput" multiple style="display:none" accept="image/*">
+                <input type="text" id="queryInput" placeholder="Try searching 'a sunny day' or 'animal'...">
+                <button id="searchBtn">🔍 Search</button>
+            </div>
+            <div id="gallery"></div>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { pipeline, RawImage } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0";
+
+    let visionModel, textModel;
+    let imageDatabase = []; // Stores { element, embedding }
+    
+    const status = document.getElementById('status');
+    const gallery = document.getElementById('gallery');
+
+    // 1. Initialize CLIP (Two specialized pipelines)
+    document.getElementById('loadBtn').onclick = async () => {
+        status.textContent = "⏳ Loading CLIP models...";
+        try {
+            // We use feature-extraction to get the raw math vectors (embeddings)
+            visionModel = await pipeline('feature-extraction', 'Xenova/clip-vit-base-patch32', { device: 'webgpu' });
+            textModel = await pipeline('feature-extraction', 'Xenova/clip-vit-base-patch32', { device: 'webgpu' });
+            
+            status.textContent = "✅ Ready! Upload some photos to begin.";
+            document.getElementById('setup').style.display = 'none';
+            document.getElementById('mainUI').style.display = 'block';
+        } catch (e) {
+            status.textContent = "❌ Error: " + e.message;
+        }
+    };
+
+    // 2. Handle Image Upload & Indexing
+    document.getElementById('fileInput').onchange = async (e) => {
+        const files = Array.from(e.target.files);
+        status.textContent = `⚙️ Indexing ${files.length} images...`;
+        
+        for (const file of files) {
+            const url = URL.createObjectURL(file);
+            
+            // Create UI element
+            const div = document.createElement('div');
+            div.className = 'photo-card';
+            div.innerHTML = `<img src="${url}"><div class="score-badge"></div>`;
+            gallery.appendChild(div);
+
+            // Generate Embedding (The "Math Vector")
+            const img = await RawImage.fromURL(url);
+            const output = await visionModel(img);
+            
+            // Normalize the vector (makes similarity math easier)
+            const embedding = Array.from(output.data);
+            
+            imageDatabase.push({ element: div, embedding: embedding });
+        }
+        status.textContent = `✅ ${imageDatabase.length} images indexed. Try a search!`;
+    };
+
+    // 3. Semantic Search (The Math of Similarity)
+    document.getElementById('searchBtn').onclick = async () => {
+        const query = document.getElementById('queryInput').value;
+        if (!query || imageDatabase.length === 0) return;
+
+        status.textContent = "🔍 Thinking...";
+        
+        // Get the text vector
+        const textOutput = await textModel(query);
+        const queryVec = Array.from(textOutput.data);
+
+        // Calculate Cosine Similarity for every image
+        imageDatabase.forEach(item => {
+            const score = cosineSimilarity(queryVec, item.embedding);
+            
+            // Update UI based on score
+            const badge = item.element.querySelector('.score-badge');
+            badge.textContent = Math.round(score * 100) + "%";
+            
+            if (score > 0.22) { // Threshold for a "match"
+                item.element.classList.remove('dim');
+                item.element.classList.add('match');
+            } else {
+                item.element.classList.add('dim');
+                item.element.classList.remove('match');
+            }
+        });
+
+        status.textContent = `Done. Showing matches for "${query}"`;
+    };
+
+    // Helper: Dot Product Math
+    function cosineSimilarity(vecA, vecB) {
+        let dotProduct = 0;
+        let normA = 0;
+        let normB = 0;
+        for (let i = 0; i < vecA.length; i++) {
+            dotProduct += vecA[i] * vecB[i];
+            normA += vecA[i] * vecA[i];
+            normB += vecB[i] * vecB[i];
+        }
+        return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    }
+</script>
+</body>
+</html>
