@@ -1,18 +1,18 @@
 <!DOCTYPE html>
 <html>
-<body style="background:#111;color:#eee;font-family:sans-serif;text-align:center;padding:20px">
+<body style="background:#111;color:#eee;text-align:center;font-family:sans-serif;padding:20px">
 
-<h2>Live YOLOv8 Detection</h2>
+<h2>Live YOLO Detection</h2>
 
 <video id="cam" autoplay playsinline style="width:480px;border:2px solid #444"></video>
-<canvas id="out" width="480" height="360" style="position:absolute;left:0;top:0"></canvas>
+<canvas id="draw" width="480" height="360" style="position:absolute;left:0;top:0"></canvas>
 
 <br><br>
-<button id="run" style="padding:10px 20px;font-size:1rem">Start</button>
+<button id="go" style="padding:10px 20px;font-size:1rem">Start</button>
 <div id="status" style="margin-top:10px;font-family:monospace"></div>
 
 <script type="module">
-import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.3";
+import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
@@ -20,8 +20,8 @@ env.remoteHost = "https://huggingface.co";
 env.remotePathTemplate = "{model}/resolve/{revision}/";
 
 const cam = document.getElementById("cam");
-const out = document.getElementById("out");
-const ctx = out.getContext("2d");
+const draw = document.getElementById("draw");
+const ctx = draw.getContext("2d");
 const status = document.getElementById("status");
 
 let detector = null;
@@ -36,7 +36,7 @@ async function startCam() {
 async function loop() {
     if (!running) return;
 
-    ctx.drawImage(cam, 0, 0, out.width, out.height);
+    ctx.drawImage(cam, 0, 0, draw.width, draw.height);
     const results = await detector(cam);
 
     results.forEach(r => {
@@ -52,7 +52,7 @@ async function loop() {
     requestAnimationFrame(loop);
 }
 
-document.getElementById("run").onclick = async () => {
+document.getElementById("go").onclick = async () => {
     status.textContent = "Loading model...";
     await startCam();
     detector = await pipeline("object-detection", "Xenova/yolov8n");
