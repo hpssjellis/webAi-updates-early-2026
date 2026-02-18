@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AI Voice Assistant (Local Whisper)</title>
+    <style>
+        :root { --accent: #ff007b; --bg: #0a0a0c; --card: #1a1a1e; }
+        body { background: var(--bg); color: #fff; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; padding: 40px; }
+        .container { background: var(--card); border-radius: 20px; padding: 30px; width: 100%; max-width: 600px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid #333; }
+        h1 { color: var(--accent); text-align: center; margin-top: 0; }
+        
+        .status { font-size: 0.9rem; color: #888; margin-bottom: 20px; text-align: center; font-family: monospace; }
+        .controls { display: flex; flex-direction: column; gap: 15px; }
+        
+        button { background: var(--accent); border: none; padding: 15px; border-radius: 10px; color: white; font-weight: bold; cursor: pointer; transition: 0.3s; font-size: 1rem; }
+        button:disabled { background: #444; cursor: wait; }
+        button.recording { background: #ff4444; animation: pulse 1.5s infinite; }
+        
+        select, textarea { background: #000; border: 1px solid #444; color: #fff; padding: 10px; border-radius: 8px; width: 100%; box-sizing: border-box; }
+        textarea { height: 100px; resize: none; margin-top: 10px; }
+        
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>🎙️ Audio AI Assistant</h1>
+        <div id="status" class="status">Click "Load Engine" to start.</div>
+
+        <div class="controls">
+            <button id="loadBtn">🚀 Load Whisper (ASR Engine)</button>
+            
+            <div id="ui" style="display: none;">
+                <button id="recordBtn">🎤 Start Recording</button>
+                <textarea id="transcript" placeholder="Your speech will appear here..."></textarea>
+                
+                <label for="voiceSelect">Choose a Voice (Chrome Defaults):</label>
+                <select id="voiceSelect"></select>
+                <button id="speakBtn">🔊 Speak Text</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0";
+
+        let transcriber;
+        let recorder;
+        let audioChunks = [];
+        const statusEl = document.getElementById('status');
+        const loadBtn = document.getElementById('loadBtn');
+        const recordBtn = document.getElementById('recordBtn');
+        const voiceSelect = document.getElementById('voiceSelect');
+
+        // --- 1. Load Chrome's Default Voices ---
+        function loadVoices() {
+            const voices = window.speechSynthesis.getVoices();
+            voiceSelect.innerHTML = voices
+                .map(v => `<option value="${v.name}">${v.name} (${v.lang})</option>`)
+                .join('');
+        }
+        window.speechSynthesis.onvoiceschanged = loadVoices;
+        loadVoices();
+
+        // --- 2. Initialize Transformers.js Whisper ---
+        loadBtn.onclick = async () => {
+            loadBtn.disabled = true;
+            statusEl.textContent = "⏳ Downloading Whisper-Tiny... (approx 75MB)";
+            
+            transcriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en', {
+                device: 'webgpu', // Use WebGPU for lightning fast transcription
+            });
+
+            statusEl.textContent = "✅ Ready. Microphone access required.";
+            loadBtn.style.display = 'none';
+            document.getElementById('ui').style.display = 'block';
+        };
+
+        // --- 3. Microphone Recording Logic ---
+        recordBtn.onclick = async () => {
+            if (recorder && recorder.state === "recording") {
+                recorder.stop();
+                recordBtn.textContent = "🎤 Start Recording";
+                recordBtn.classList.remove('recording');
+                statusEl.textContent = "⚙️ Transcribing...";
+                return;
+            }
+
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            recorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            recorder.ondataavailable = e => audioChunks.push(e.data);
+            recorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                const audioUrl = URL.createObjectURL(audioBlob);
+                
+                // Convert Blob to AudioBuffer for Whisper
+                const audioContext = new AudioContext({ sampleRate: 16000 });
+                const arrayBuffer = await audioBlob.arrayBuffer();
+                const decoded = await audioContext.decodeAudioData(arrayBuffer);
+                const audioData = decoded.getChannelData(0);
+
+                // Run Transcription
+                const output = await transcriber(audioData);
+                document.getElementById('transcript').value = output.text;
+                statusEl.textContent = "✅ Transcription complete.";
+            };
+
+            recorder.start();
+            recordBtn.textContent = "🛑 Stop & Transcribe";
+            recordBtn.classList.add('recording');
+            statusEl.textContent = "🔴 Listening to your microphone...";
+        };
+
+        // --- 4. Chrome Text-to-Speech (TTS) ---
+        document.getElementById('speakBtn').onclick = () => {
+            const text = document.getElementById('transcript').value;
+            const utterance = new SpeechSynthesisUtterance(text);
+            const voices = window.speechSynthesis.getVoices();
+            utterance.voice = voices.find(v => v.name === voiceSelect.value);
+            window.speechSynthesis.speak(utterance);
+        };
+    </script>
+</body>
+</html>
