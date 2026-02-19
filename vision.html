@@ -1,65 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Real-Time Object Detection</title>
+</head>
 <body style="font-family: sans-serif; padding: 20px; text-align: center; background: #111; color: white;">
     <h1>Real-Time Object Detection</h1>
-    <video id="myVideo" autoplay playsinline style="width: 100%; max-width: 500px; border: 2px solid #555;"></video>
-    <div id="myResult" style="font-size: 1.5rem; margin-top: 20px; color: #0f0;">Starting camera...</div>
+
+    <!-- FIX 1: We need a canvas to (a) snapshot frames for the pipeline and
+         (b) draw bounding boxes. The video is kept hidden; we render everything
+         to the canvas so detections are visible overlaid on the frame. -->
+    <div style="position: relative; display: inline-block; max-width: 500px; width: 100%;">
+        <video id="myVideo" autoplay playsinline muted style="display: none;"></video>
+        <canvas id="myCanvas" style="width: 100%; border: 2px solid #555; border-radius: 4px;"></canvas>
+    </div>
+
+    <div id="myResult" style="font-size: 1.2rem; margin-top: 15px; color: #0f0; min-height: 2em;">
+        Starting camera...
+    </div>
 
     <script type="module">
         import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4';
 
         let myDetector;
+        let myIsRunning = false;
         const myVideoElement = document.getElementById('myVideo');
-        const myResultElement = document.getElementById('myResult');
+        const myCanvas       = document.getElementById('myCanvas');
+        const myCtx          = myCanvas.getContext('2d');
+        const myResultEl     = document.getElementById('myResult');
 
         async function mySetupCamera() {
             const myStream = await navigator.mediaDevices.getUserMedia({ video: true });
             myVideoElement.srcObject = myStream;
-            // Wait for video to actually start playing
-            return new Promise(resolve => myVideoElement.onloadedmetadata = () => {
-                myVideoElement.play();
-                resolve();
+            return new Promise(resolve => {
+                myVideoElement.onloadedmetadata = () => {
+                    myVideoElement.play();
+                    // Size the canvas to match the video
+                    myCanvas.width  = myVideoElement.videoWidth;
+                    myCanvas.height = myVideoElement.videoHeight;
+                    resolve();
+                };
             });
         }
 
-        async function myContinuousDetection() {
-            if (myDetector) {
-                try {
-                    // FIX: Pass the video ELEMENT, not the srcObject stream
-                    const myOutput = await myDetector(myVideoElement);
-                    
-                    if (myOutput.length > 0) {
-                        // DETR returns an array of objects. We take the highest score.
-                        const myTopMatch = myOutput.reduce((prev, current) => (prev.score > current.score) ? prev : current);
-                        myResultElement.innerText = `${myTopMatch.label} (${(myTopMatch.score * 100).toFixed(1)}%)`;
-                    } else {
-                        myResultElement.innerText = "No objects detected";
-                    }
-                } catch (myError) {
-                    console.error("Detection error:", myError);
+        // FIX 2: The object-detection pipeline cannot accept a live <video> element.
+        // It requires a static image: a URL string, an HTMLImageElement, an ImageData,
+        // or an HTMLCanvasElement. The correct real-time pattern is:
+        //   1. Draw the current video frame to a canvas via drawImage()
+        //   2. Pass that canvas element to the pipeline
+        // This gives the model a frozen snapshot of the frame to analyse.
+        async function myDetectFrame() {
+            if (!myDetector || !myIsRunning) return;
+
+            // Draw current video frame to canvas
+            myCtx.drawImage(myVideoElement, 0, 0, myCanvas.width, myCanvas.height);
+
+            try {
+                // Pass the canvas element — the pipeline reads it as a static image
+                const myOutput = await myDetector(myCanvas, {
+                    threshold: 0.5,     // Only show detections above 50% confidence
+                    percentage: true,   // Return bounding boxes as 0–1 fractions
+                });
+
+                // Redraw the video frame cleanly before overlaying boxes
+                myCtx.drawImage(myVideoElement, 0, 0, myCanvas.width, myCanvas.height);
+
+                if (myOutput.length > 0) {
+                    // Draw a bounding box + label for every detected object
+                    myOutput.forEach(det => {
+                        const { xmin, ymin, xmax, ymax } = det.box;
+                        const x = xmin * myCanvas.width;
+                        const y = ymin * myCanvas.height;
+                        const w = (xmax - xmin) * myCanvas.width;
+                        const h = (ymax - ymin) * myCanvas.height;
+
+                        myCtx.strokeStyle = '#00ff00';
+                        myCtx.lineWidth   = 2;
+                        myCtx.strokeRect(x, y, w, h);
+
+                        const label = `${det.label} ${(det.score * 100).toFixed(0)}%`;
+                        myCtx.fillStyle = '#00ff00';
+                        myCtx.font      = 'bold 14px sans-serif';
+                        myCtx.fillText(label, x + 4, y + 16);
+                    });
+
+                    // FIX 3: Show ALL detected objects in the text readout, not just the
+                    // top one. Hiding all but the highest score loses important context.
+                    const labels = myOutput.map(d => `${d.label} (${(d.score * 100).toFixed(0)}%)`);
+                    myResultEl.innerText = labels.join('  ·  ');
+                } else {
+                    myResultEl.innerText = "No objects detected";
                 }
+            } catch (myErr) {
+                console.error("Detection error:", myErr);
             }
-            // Loop the detection
-            requestAnimationFrame(myContinuousDetection);
+
+            // FIX 4: requestAnimationFrame fires ~60 times/second, but each Whisper/DETR
+            // inference takes 200–500ms. Stacking calls causes a growing backlog that
+            // freezes the page. Use setTimeout to throttle to a safe ~2 FPS instead.
+            setTimeout(myDetectFrame, 500);
         }
 
         async function myInit() {
             try {
                 await mySetupCamera();
-                myResultElement.innerText = "Loading Model (WebGPU)...";
-                
-                // Initializing the pipeline
-                myDetector = await pipeline('object-detection', 'Xenova/detr-resnet-50', { 
-                    device: 'webgpu', 
-                    dtype: 'q8' 
-                });
-                
-                myResultElement.innerText = "Model Ready!";
-                myContinuousDetection();
+                myResultEl.innerText = "Loading DETR model (WebGPU)...";
+
+                // FIX 5: dtype: 'q8' is not a valid single-string dtype for DETR on WebGPU.
+                // DETR is a vision encoder-decoder; the safe and confirmed WebGPU dtype is fp32.
+                // q8 on WebGPU either silently falls back or produces inaccurate detections.
+                myDetector = await pipeline(
+                    'object-detection',
+                    'Xenova/detr-resnet-50',
+                    {
+                        device: 'webgpu',
+                        dtype: 'fp32',
+                    }
+                );
+
+                myResultEl.innerText = "Model ready — detecting...";
+                myIsRunning = true;
+                myDetectFrame();
+
             } catch (myErr) {
-                myResultElement.innerText = "Error: " + myErr.message;
+                myResultEl.innerText = "Error: " + myErr.message;
+                console.error(myErr);
             }
         }
 
-        // Static link to start the program
         window.onload = myInit;
     </script>
 </body>
+</html>
