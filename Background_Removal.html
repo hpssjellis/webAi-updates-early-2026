@@ -34,21 +34,49 @@
         const myLoadBtn = document.getElementById("myLoadBtn");
         const mySnapBtn = document.getElementById("mySnapBtn");
 
-        // Start camera immediately on page load
         navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } })
             .then(stream => { myCam.srcObject = stream; })
             .catch(() => { myStatus.innerText = "❌ Camera access denied."; });
 
         myLoadBtn.onclick = async () => {
             myLoadBtn.disabled = true;
-            myStatus.innerText = "⏳ Loading model (WebGPU)...";
+            // NOTE: BEN2-ONNX has a confirmed open bug on WebGPU (issue #1272) where
+            // the mask output is corrupted, causing toCanvas() to fail with
+            // "Cannot read properties of undefined". WASM produces correct results.
+            myStatus.innerText = "⏳ Loading model (WASM)...";
+            console.log("[BG Remover] Loading model...");
             try {
-                myPipe = await pipeline("background-removal", "onnx-community/BEN2-ONNX", { device: "webgpu" });
+                myPipe = await pipeline("background-removal", "onnx-community/BEN2-ONNX", {
+                    device: "wasm",
+                    progress_callback: (p) => {
+                        if (p.status === 'initiate') {
+                            const msg = `Fetching: ${p.file}`;
+                            myStatus.innerText = msg;
+                            console.log(`[BG Remover] ${msg}`);
+                        } else if (p.status === 'progress' && p.total) {
+                            const pct = Math.round(p.progress);
+                            const mb  = (p.loaded / 1024 / 1024).toFixed(1);
+                            const tot = (p.total  / 1024 / 1024).toFixed(1);
+                            const msg = `↓ ${p.file}  ${mb} / ${tot} MB  (${pct}%)`;
+                            myStatus.innerText = msg;
+                            console.log(`[BG Remover] ${msg}`);
+                        } else if (p.status === 'done') {
+                            const msg = `✔ Loaded: ${p.file}`;
+                            myStatus.innerText = msg;
+                            console.log(`[BG Remover] ${msg}`);
+                        } else if (p.status === 'ready') {
+                            const msg = '🟢 Model ready!';
+                            myStatus.innerText = msg;
+                            console.log(`[BG Remover] ${msg}`);
+                        }
+                    },
+                });
                 myStatus.innerText = "🟢 Ready — press Snap!";
                 mySnapBtn.disabled = false;
                 myLoadBtn.style.display = "none";
             } catch (e) {
                 myStatus.innerText = "❌ " + e.message;
+                console.error("[BG Remover] Load failed:", e);
                 myLoadBtn.disabled = false;
             }
         };
@@ -56,8 +84,8 @@
         mySnapBtn.onclick = async () => {
             mySnapBtn.disabled = true;
             myStatus.innerText = "⏳ Processing...";
+            console.log("[BG Remover] Running inference...");
 
-            // Snapshot the current frame, mirrored to match the camera preview
             const mySnap = document.createElement("canvas");
             mySnap.width  = myCam.videoWidth  || 320;
             mySnap.height = myCam.videoHeight || 240;
@@ -68,11 +96,12 @@
 
             try {
                 const myOutput = await myPipe(mySnap);
-                // background-removal returns Array<RawImage> — render directly to canvas
+                console.log("[BG Remover] Output:", myOutput);
                 await myOutput[0].toCanvas(myCanvas);
                 myStatus.innerText = "✅ Done!";
             } catch (e) {
                 myStatus.innerText = "❌ " + e.message;
+                console.error("[BG Remover] Inference failed:", e);
             } finally {
                 mySnapBtn.disabled = false;
             }
