@@ -43,7 +43,7 @@
             myLoadBtn.disabled = true;
             myStatus.innerText = "⏳ Loading model (WebGPU)...";
             try {
-                myPipe = await pipeline("background-removal", "onnx-community/RMBG-1.4", { device: "webgpu" });
+                myPipe = await pipeline("background-removal", "onnx-community/BEN2-ONNX", { device: "webgpu" });
                 myStatus.innerText = "🟢 Ready — press Snap!";
                 mySnapBtn.disabled = false;
                 myLoadBtn.style.display = "none";
