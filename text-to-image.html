@@ -4,12 +4,13 @@
     <meta charset="UTF-8">
     <title>Janus-Pro | Text-to-Image</title>
     <style>
-        /* Keeping your custom styling but ensuring it's minimal as per your preference */
         body { background: #080808; color: #e8e8e8; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
         .myCard { background: #101010; border: 1px solid #222; border-radius: 12px; padding: 25px; width: 100%; max-width: 600px; }
-        #myOutputCanvas { width: 100%; border-radius: 8px; margin-top: 15px; display: none; background: #000; }
-        .myBtn { width: 100%; padding: 12px; margin-top: 10px; cursor: pointer; border-radius: 6px; font-weight: bold; }
-        #myStatus { font-size: 0.8rem; color: #888; margin-top: 10px; font-family: monospace; }
+        #myOutputCanvas { width: 100%; border-radius: 8px; margin-top: 15px; display: none; background: #000; border: 1px solid #333; }
+        .myBtn { width: 100%; padding: 12px; margin-top: 10px; cursor: pointer; border-radius: 6px; font-weight: bold; transition: opacity 0.2s; }
+        .myBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+        #myStatus { font-size: 0.8rem; color: #888; margin-top: 10px; font-family: monospace; text-align: center; }
+        textarea { border-radius: 6px; resize: none; }
     </style>
 </head>
 <body>
@@ -18,37 +19,40 @@
         <h2 style="color: #00ffcc; margin-top: 0;">✦ Janus-Pro Local Gen</h2>
         
         <div id="myLoadSection">
-            <p style="font-size: 0.8rem; color: #666;">Note: Downloads ~800MB. Requires WebGPU.</p>
+            <p style="font-size: 0.8rem; color: #666;">Downloads ~800MB - 1.2GB. WebGPU required.</p>
             <button class="myBtn" id="myLoadBtn" onclick="window.myInitModel()" style="background: transparent; border: 1px solid #00ffcc; color: #00ffcc;">⚡ Load Model</button>
         </div>
 
         <div id="myGenSection" style="display: none;">
-            <textarea id="myPromptInput" style="width: 100%; height: 80px; background: #000; color: #fff; border: 1px solid #333; padding: 10px; box-sizing: border-box;" placeholder="A cyberpunk cat in a neon city..."></textarea>
+            <textarea id="myPromptInput" style="width: 100%; height: 80px; background: #000; color: #fff; border: 1px solid #333; padding: 10px; box-sizing: border-box;" placeholder="A beautiful oil painting of a futuristic city..."></textarea>
             
             <button class="myBtn" id="myGenBtn" onclick="window.myGenerateImage()" style="background: #00ffcc; border: none; color: #000;">✦ Generate Image</button>
             
-            <div id="myTokenProgress" style="height: 4px; background: #222; margin-top: 10px; display: none;">
-                <div id="myTokenBar" style="height: 100%; background: #00ffcc; width: 0%;"></div>
+            <div id="myTokenProgress" style="height: 6px; background: #222; margin-top: 15px; display: none; border-radius: 3px; overflow: hidden;">
+                <div id="myTokenBar" style="height: 100%; background: #00ffcc; width: 0%; transition: width 0.1s;"></div>
             </div>
         </div>
 
         <canvas id="myOutputCanvas"></canvas>
-        <div id="myStatus">Waiting for user...</div>
+        <div id="myStatus">Ready to load.</div>
     </div>
 
     <script type="module">
-        import { AutoProcessor, MultiModalityCausalLM, RawImage } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
+        // Import version 4 specific components
+        import { AutoProcessor, MultiModalityCausalLM, RawImage, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
+
+        // Enable WebGPU specifically
+        env.allowLocalModels = false;
 
         let myModel = null;
         let myProcessor = null;
         const myStatus = document.getElementById('myStatus');
         const myCanvas = document.getElementById('myOutputCanvas');
 
-        // 1. Initialize Model
         window.myInitModel = async function() {
             const myBtn = document.getElementById('myLoadBtn');
             myBtn.disabled = true;
-            myStatus.innerText = "⏳ Initializing WebGPU & Downloading...";
+            myStatus.innerText = "⏳ Checking WebGPU & Downloading (this may take a minute)...";
 
             try {
                 const myModelId = "onnx-community/Janus-Pro-1B-ONNX";
@@ -71,12 +75,12 @@
                 document.getElementById('myLoadSection').style.display = 'none';
                 document.getElementById('myGenSection').style.display = 'block';
             } catch (myErr) {
-                myStatus.innerText = "❌ Load Error: " + myErr.message;
+                console.error(myErr);
+                myStatus.innerText = "❌ Error: " + myErr.message;
                 myBtn.disabled = false;
             }
         };
 
-        // 2. Generate Image
         window.myGenerateImage = async function() {
             const myPrompt = document.getElementById('myPromptInput').value;
             const myGenBtn = document.getElementById('myGenBtn');
@@ -86,48 +90,47 @@
             if (!myPrompt) return alert("Please enter a prompt");
 
             myGenBtn.disabled = true;
-            myStatus.innerText = "🎨 Generating tokens (576 required)...";
+            myCanvas.style.display = 'none';
+            myStatus.innerText = "🎨 Generating 576 tokens...";
             myWrap.style.display = 'block';
+            myBar.style.width = "0%";
 
             try {
-                // Correct template role for Janus
+                // Formatting prompt for Janus-Pro T2I
                 const myMessages = [{ role: 'user', content: myPrompt }];
-                
-                // Use the specific text_to_image template
                 const myInputs = await myProcessor(myMessages, { chat_template: 'text_to_image' });
                 
-                const myNumTokens = myProcessor.num_image_tokens; // Usually 576
+                // Janus-Pro uses a fixed 24x24 grid (576 tokens)
+                const myNumTokens = 576; 
 
                 const myOutput = await myModel.generate({
                     ...myInputs,
                     max_new_tokens: myNumTokens,
                     do_sample: true,
                     temperature: 1.0,
-                    callback_function: (myTokens) => {
-                        const myCount = myTokens[0].output_ids.length - myInputs.input_ids.dims.at(-1);
-                        const myPct = (myCount / myNumTokens) * 100;
+                    callback_function: (myGeneration) => {
+                        // Correctly calculate progress based on generated IDs
+                        const currentTokens = myGeneration[0].output_ids.length - myInputs.input_ids.dims.at(-1);
+                        const myPct = Math.min((currentTokens / myNumTokens) * 100, 100);
                         myBar.style.width = myPct + "%";
                     }
                 });
 
-                myStatus.innerText = "✨ Decoding pixels...";
+                myStatus.innerText = "✨ Reconstruction in progress...";
 
-                // Slice tokens: remove the prompt tokens, keep the new image tokens
+                // Extract only the generated image tokens
                 const myPromptLen = myInputs.input_ids.dims.at(-1);
                 const myImageTokens = myOutput.slice(null, [myPromptLen, null]);
 
-                // Convert tokens back to an image
+                // Decode tokens into pixel data
                 const myDecoded = await myProcessor.decode_image(myImageTokens);
 
-                // Draw to Canvas
-                myCanvas.width = myDecoded.width;
-                myCanvas.height = myDecoded.height;
+                // Use RawImage.toCanvas for reliable cross-browser rendering
+                const rawImage = new RawImage(myDecoded.data, myDecoded.width, myDecoded.height, 3);
+                await rawImage.toCanvas(myCanvas);
+                
                 myCanvas.style.display = 'block';
-                const myCtx = myCanvas.getContext('2d');
-                const myData = new ImageData(myDecoded.data, myDecoded.width, myDecoded.height);
-                myCtx.putImageData(myData, 0, 0);
-
-                myStatus.innerText = "✅ Generation Complete!";
+                myStatus.innerText = "✅ Done!";
             } catch (myErr) {
                 console.error(myErr);
                 myStatus.innerText = "❌ Gen Error: " + myErr.message;
