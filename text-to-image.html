@@ -37,7 +37,11 @@
         <div id="myStatus">Ready to load.</div>
     </div>
 
-import { AutoProcessor, MultiModalityCausalLM, RawImage, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.17";
+
+<script type="module">
+
+
+import { AutoProcessor, MultiModalityCausalLM, RawImage, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
 
 // Enable WebGPU specifically
 env.allowLocalModels = false;
@@ -135,5 +139,6 @@ window.myGenerateImage = async function() {
         myWrap.style.display = 'none';
     }
 };
+</script>
 </body>
 </html>
