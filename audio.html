@@ -1,3 +1,9 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Real-Time Transcription (Whisper)</title>
+</head>
 <body style="font-family: sans-serif; padding: 20px; text-align: center; background: #111; color: white;">
     <h1>Real-Time Transcription (Whisper)</h1>
     <button id="myStartBtn" style="padding: 15px 30px; font-size: 1.2rem; cursor: pointer; border-radius: 8px; border: none; background: #007bff; color: white;">
@@ -16,56 +22,111 @@
         async function myStartAudio() {
             if (myIsRecording) return;
             myIsRecording = true;
-            
+
             const myStatusElement = document.getElementById('myTranscript');
-            myStatusElement.innerText = "Loading Whisper (WebGPU)...";
+            const myBtn = document.getElementById('myStartBtn');
+            myBtn.disabled = true;
+            myStatusElement.innerText = "Loading Whisper model...";
 
             try {
-                // 1. Initialize the pipeline
-                myTranscriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en', { 
-                    device: 'webgpu',
-                    dtype: 'fp16' 
-                });
+                // FIX 1: Model ID is correct (onnx-community/whisper-tiny.en).
+                // FIX 2: dtype must be a per-submodel map for Whisper, NOT a single string.
+                // Whisper has two submodels: encoder_model and decoder_model_merged.
+                // The safe and proven WebGPU dtype combo is encoder=fp32, decoder=q4.
+                // A single dtype: 'fp16' applied to the decoder produces broken/garbled output.
+                myTranscriber = await pipeline(
+                    'automatic-speech-recognition',
+                    'onnx-community/whisper-tiny.en',
+                    {
+                        device: 'webgpu',
+                        dtype: {
+                            encoder_model: 'fp32',
+                            decoder_model_merged: 'q4',
+                        },
+                    }
+                );
 
-                // 2. Request Mic Permission
+                myStatusElement.innerText = "Model loaded. Requesting microphone...";
+
                 const myStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                
-                // 3. Create AudioContext (Whisper works best at 16000Hz)
+
+                // FIX 3: createScriptProcessor is deprecated and removed in many browsers.
+                // The modern replacement is AudioWorkletProcessor. However, for a simple
+                // real-time accumulation approach, the cleanest cross-browser solution is
+                // MediaRecorder — capture fixed-length chunks as Blobs, decode them via
+                // AudioContext.decodeAudioData(), then pass Float32Array to the pipeline.
+                // This avoids the deprecated API and the complex worklet setup entirely.
                 const myAudioContext = new AudioContext({ sampleRate: 16000 });
-                
-                // IMPORTANT: AudioContext often starts 'suspended'. We must resume it.
-                if (myAudioContext.state === 'suspended') {
-                    await myAudioContext.resume();
-                }
 
-                const mySource = myAudioContext.createMediaStreamSource(myStream);
-                // 4096 buffer size is standard for real-time processing
-                const myProcessor = myAudioContext.createScriptProcessor(4096, 1, 1);
+                // FIX 4: The pipeline expects the input as an OBJECT with shape:
+                //   { raw: Float32Array, sampling_rate: 16000 }
+                // NOT a bare Float32Array. Passing a raw array causes the pipeline to
+                // assume an unknown/wrong sample rate and produces garbage transcriptions.
 
-                mySource.connect(myProcessor);
-                myProcessor.connect(myAudioContext.destination);
+                // We use MediaRecorder to capture 3-second chunks for transcription.
+                // This is more reliable than processing 4096-sample raw buffers directly,
+                // which are too short (~0.25s) for Whisper to produce meaningful output.
+                const CHUNK_DURATION_MS = 3000;
+                const myRecorder = new MediaRecorder(myStream);
+                let myChunks = [];
 
-                myStatusElement.innerText = "Listening... (Speak now)";
+                myRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) myChunks.push(e.data);
+                };
 
-                myProcessor.onaudioprocess = async (myEvent) => {
-                    const myAudioData = myEvent.inputBuffer.getChannelData(0);
-                    
-                    // We clone the data so the processor doesn't clear it before Whisper finishes
-                    const myAudioClone = new Float32Array(myAudioData);
-                    
-                    const myResult = await myTranscriber(myAudioClone);
-                    if (myResult && myResult.text) {
-                        myStatusElement.innerText = myResult.text;
+                myRecorder.onstop = async () => {
+                    const myBlob = new Blob(myChunks, { type: myRecorder.mimeType });
+                    myChunks = [];
+
+                    try {
+                        // Decode the audio blob into a Float32Array at 16kHz
+                        const myArrayBuffer = await myBlob.arrayBuffer();
+                        const myDecodedAudio = await myAudioContext.decodeAudioData(myArrayBuffer);
+
+                        // Get mono channel data (channel 0)
+                        const myFloat32 = myDecodedAudio.getChannelData(0);
+
+                        // FIX 4 (continued): Pass as { raw, sampling_rate } object
+                        const myResult = await myTranscriber(
+                            { raw: myFloat32, sampling_rate: 16000 }
+                        );
+
+                        if (myResult && myResult.text && myResult.text.trim()) {
+                            // Append each chunk's transcription rather than replacing it
+                            myStatusElement.innerText += myResult.text;
+                        }
+                    } catch (myDecodeErr) {
+                        console.warn("Chunk decode error:", myDecodeErr);
+                    }
+
+                    // Restart recording the next chunk if still active
+                    if (myIsRecording) {
+                        myRecorder.start();
+                        setTimeout(() => {
+                            if (myRecorder.state === 'recording') myRecorder.stop();
+                        }, CHUNK_DURATION_MS);
                     }
                 };
 
+                // FIX 5: Clear the status message and start recording
+                myStatusElement.innerText = "";
+                myBtn.textContent = "Listening... 🔴";
+
+                // Start the first chunk
+                myRecorder.start();
+                setTimeout(() => {
+                    if (myRecorder.state === 'recording') myRecorder.stop();
+                }, CHUNK_DURATION_MS);
+
             } catch (myErr) {
                 myStatusElement.innerText = "Error: " + myErr.message;
+                console.error(myErr);
                 myIsRecording = false;
+                myBtn.disabled = false;
             }
         }
 
-        // Static link to the function
         document.getElementById('myStartBtn').onclick = myStartAudio;
     </script>
 </body>
+</html>
