@@ -8,35 +8,58 @@
 
         let myDetector;
         const myVideoElement = document.getElementById('myVideo');
+        const myResultElement = document.getElementById('myResult');
 
         async function mySetupCamera() {
             const myStream = await navigator.mediaDevices.getUserMedia({ video: true });
             myVideoElement.srcObject = myStream;
-            return new Promise(resolve => myVideoElement.onloadedmetadata = resolve);
+            // Wait for video to actually start playing
+            return new Promise(resolve => myVideoElement.onloadedmetadata = () => {
+                myVideoElement.play();
+                resolve();
+            });
         }
 
         async function myContinuousDetection() {
-            // Inference
-            const myOutput = await myDetector(myVideoElement.srcObject);
-            
-            // Display top detected object
-            if (myOutput.length > 0) {
-                const { label, score } = myOutput[0];
-                document.getElementById('myResult').innerText = `${label} (${(score * 100).toFixed(1)}%)`;
+            if (myDetector) {
+                try {
+                    // FIX: Pass the video ELEMENT, not the srcObject stream
+                    const myOutput = await myDetector(myVideoElement);
+                    
+                    if (myOutput.length > 0) {
+                        // DETR returns an array of objects. We take the highest score.
+                        const myTopMatch = myOutput.reduce((prev, current) => (prev.score > current.score) ? prev : current);
+                        myResultElement.innerText = `${myTopMatch.label} (${(myTopMatch.score * 100).toFixed(1)}%)`;
+                    } else {
+                        myResultElement.innerText = "No objects detected";
+                    }
+                } catch (myError) {
+                    console.error("Detection error:", myError);
+                }
             }
-
-            // Immediately call again for continuous loop
+            // Loop the detection
             requestAnimationFrame(myContinuousDetection);
         }
 
         async function myInit() {
-            await mySetupCamera();
-            document.getElementById('myResult').innerText = "Loading Model (WebGPU)...";
-            // Using a lightweight model for speed
-            myDetector = await pipeline('object-detection', 'Xenova/detr-resnet-50', { device: 'webgpu', dtype: 'q8' });
-            myContinuousDetection();
+            try {
+                await mySetupCamera();
+                myResultElement.innerText = "Loading Model (WebGPU)...";
+                
+                // Initializing the pipeline
+                myDetector = await pipeline('object-detection', 'Xenova/detr-resnet-50', { 
+                    device: 'webgpu', 
+                    dtype: 'q8' 
+                });
+                
+                myResultElement.innerText = "Model Ready!";
+                myContinuousDetection();
+            } catch (myErr) {
+                myResultElement.innerText = "Error: " + myErr.message;
+            }
         }
 
-        myInit();
+        // Static link to start the program
+        window.onload = myInit;
     </script>
 </body>
