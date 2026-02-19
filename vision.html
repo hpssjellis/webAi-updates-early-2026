@@ -1,0 +1,42 @@
+<body style="font-family: sans-serif; padding: 20px; text-align: center; background: #111; color: white;">
+    <h1>Real-Time Object Detection</h1>
+    <video id="myVideo" autoplay playsinline style="width: 100%; max-width: 500px; border: 2px solid #555;"></video>
+    <div id="myResult" style="font-size: 1.5rem; margin-top: 20px; color: #0f0;">Starting camera...</div>
+
+    <script type="module">
+        import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4';
+
+        let myDetector;
+        const myVideoElement = document.getElementById('myVideo');
+
+        async function mySetupCamera() {
+            const myStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            myVideoElement.srcObject = myStream;
+            return new Promise(resolve => myVideoElement.onloadedmetadata = resolve);
+        }
+
+        async function myContinuousDetection() {
+            // Inference
+            const myOutput = await myDetector(myVideoElement.srcObject);
+            
+            // Display top detected object
+            if (myOutput.length > 0) {
+                const { label, score } = myOutput[0];
+                document.getElementById('myResult').innerText = `${label} (${(score * 100).toFixed(1)}%)`;
+            }
+
+            // Immediately call again for continuous loop
+            requestAnimationFrame(myContinuousDetection);
+        }
+
+        async function myInit() {
+            await mySetupCamera();
+            document.getElementById('myResult').innerText = "Loading Model (WebGPU)...";
+            // Using a lightweight model for speed
+            myDetector = await pipeline('object-detection', 'Xenova/detr-resnet-50', { device: 'webgpu', dtype: 'q8' });
+            myContinuousDetection();
+        }
+
+        myInit();
+    </script>
+</body>
