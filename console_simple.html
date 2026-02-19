@@ -1,6 +1,14 @@
 <h1>Open Console, ctrl-shift I</h1>
 <button id="myButton">Run Inference</button>
+<pre>
 
+async function myRunInference() {
+    const myClassifier = await pipeline('sentiment-analysis');
+    const myOutput = await myClassifier('This works perfectly!');
+    console.log(myOutput);
+}
+    
+</pre>
 <script type="module">
 import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4';
 
