@@ -1,0 +1,43 @@
+<body style="font-family: sans-serif; padding: 20px; text-align: center;">
+    <h1>Real-Time Transcription (Whisper)</h1>
+    <button id="myStartBtn" style="padding: 15px 30px; font-size: 1.2rem; cursor: pointer;">Start Listening</button>
+    <div id="myTranscript" style="margin-top: 30px; border: 1px solid #ccc; padding: 20px; min-height: 100px; text-align: left;">
+        Transcribed text will appear here...
+    </div>
+
+    <script type="module">
+        import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4';
+
+        let myTranscriber;
+        let myIsRecording = false;
+
+        async function myStartAudio() {
+            if (myIsRecording) return;
+            myIsRecording = true;
+            
+            document.getElementById('myTranscript').innerText = "Loading Whisper (WebGPU)...";
+            myTranscriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en', { device: 'webgpu' });
+            
+            const myStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const myAudioContext = new AudioContext({ sampleRate: 16000 });
+            const mySource = myAudioContext.createMediaStreamSource(myStream);
+            const myProcessor = myAudioContext.createScriptProcessor(4096, 1, 1);
+
+            mySource.connect(myProcessor);
+            myProcessor.connect(myAudioContext.destination);
+
+            document.getElementById('myTranscript').innerText = "Listening...";
+
+            // Every time the buffer fills, we send it to the model
+            myProcessor.onaudioprocess = async (myEvent) => {
+                const myAudioData = myEvent.inputBuffer.getChannelData(0);
+                const myResult = await myTranscriber(myAudioData);
+                if (myResult.text) {
+                    document.getElementById('myTranscript').innerText = myResult.text;
+                }
+            };
+        }
+
+        document.getElementById('myStartBtn').onclick = myStartAudio;
+    </script>
+</body>
