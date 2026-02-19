@@ -1,0 +1,24 @@
+<body style="font-family: sans-serif; padding: 20px; text-align: center;">
+    <h1>Language Translation</h1>
+    <select id="myTask" style="padding: 10px;">
+        <option value="translation_en_to_fr">English to French</option>
+        <option value="translation_en_to_de">English to German</option>
+    </select>
+    <br><br>
+    <input id="myInput" value="Hello, how are you today?" style="width: 80%; padding: 10px;">
+    <button id="myRunBtn" style="padding: 10px 20px;">Translate</button>
+    <div id="myOutput" style="margin-top: 20px; font-weight: bold;"></div>
+
+    <script type="module">
+        import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4';
+        async function myRun() {
+            const myTask = document.getElementById('myTask').value;
+            const myText = document.getElementById('myInput').value;
+            document.getElementById('myOutput').innerText = "Translating...";
+            const myTranslator = await pipeline(myTask, null, { device: 'webgpu' });
+            const myResult = await myTranslator(myText);
+            document.getElementById('myOutput').innerText = myResult[0].translation_text;
+        }
+        document.getElementById('myRunBtn').onclick = myRun;
+    </script>
+</body>
