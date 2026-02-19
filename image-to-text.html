@@ -1,153 +1,218 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Janus-Pro | Text-to-Image</title>
+    <title>Janus-Pro | Multimodal AI Hub (v4)</title>
     <style>
         body { background: #080808; color: #e8e8e8; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-        .myCard { background: #101010; border: 1px solid #222; border-radius: 12px; padding: 25px; width: 100%; max-width: 600px; }
+        .myCard { background: #101010; border: 1px solid #222; border-radius: 12px; padding: 25px; width: 100%; max-width: 650px; }
+        
+        /* UI Sections */
+        .section { margin-top: 20px; padding-top: 20px; border-top: 1px solid #222; }
         #myOutputCanvas { width: 100%; border-radius: 8px; margin-top: 15px; display: none; background: #000; border: 1px solid #333; }
-        .myBtn { width: 100%; padding: 12px; margin-top: 10px; cursor: pointer; border-radius: 6px; font-weight: bold; transition: opacity 0.2s; }
+        
+        /* Buttons & Inputs */
+        .myBtn { width: 100%; padding: 12px; margin-top: 10px; cursor: pointer; border-radius: 6px; font-weight: bold; transition: background 0.2s; }
         .myBtn:disabled { opacity: 0.5; cursor: not-allowed; }
-        #myStatus { font-size: 0.8rem; color: #888; margin-top: 10px; font-family: monospace; text-align: center; }
-        textarea { border-radius: 6px; resize: none; }
+        .load-btn { background: transparent; border: 1px solid #00ffcc; color: #00ffcc; }
+        .gen-btn { background: #00ffcc; border: none; color: #000; }
+        .analyze-btn { background: #ff0077; border: none; color: #fff; }
+        
+        textarea, input[type="text"] { width: 100%; background: #000; color: #fff; border: 1px solid #333; padding: 10px; box-sizing: border-box; border-radius: 6px; resize: none; }
+        
+        #myStatus { font-size: 0.8rem; color: #888; margin-top: 15px; font-family: monospace; text-align: center; }
+        
+        /* Progress Bar */
+        #progressWrap { height: 6px; background: #222; margin-top: 15px; display: none; border-radius: 3px; overflow: hidden; }
+        #progressBar { height: 100%; background: #00ffcc; width: 0%; transition: width 0.1s; }
+        
+        .result-box { background: #050505; border: 1px dashed #444; padding: 15px; margin-top: 15px; border-radius: 8px; font-size: 0.9rem; line-height: 1.4; }
     </style>
 </head>
 <body>
 
     <div class="myCard">
-        <h2 style="color: #00ffcc; margin-top: 0;">✦ Janus-Pro Local Gen</h2>
+        <h2 style="color: #00ffcc; margin-top: 0; text-align: center;">✦ Janus-Pro v4 Local Hub</h2>
         
-        <div id="myLoadSection">
-            <p style="font-size: 0.8rem; color: #666;">Downloads ~800MB - 1.2GB. WebGPU required.</p>
-            <button class="myBtn" id="myLoadBtn" onclick="window.myInitModel()" style="background: transparent; border: 1px solid #00ffcc; color: #00ffcc;">⚡ Load Model</button>
+        <div id="loadSection">
+            <p style="font-size: 0.8rem; color: #666; text-align: center;">Requires WebGPU. Downloads ~1GB of model weights.</p>
+            <button class="myBtn load-btn" id="initBtn">⚡ Initialize Model (WebGPU)</button>
         </div>
 
-        <div id="myGenSection" style="display: none;">
-            <textarea id="myPromptInput" style="width: 100%; height: 80px; background: #000; color: #fff; border: 1px solid #333; padding: 10px; box-sizing: border-box;" placeholder="A beautiful oil painting of a futuristic city..."></textarea>
+        <div id="mainUI" style="display: none;">
             
-            <button class="myBtn" id="myGenBtn" onclick="window.myGenerateImage()" style="background: #00ffcc; border: none; color: #000;">✦ Generate Image</button>
-            
-            <div id="myTokenProgress" style="height: 6px; background: #222; margin-top: 15px; display: none; border-radius: 3px; overflow: hidden;">
-                <div id="myTokenBar" style="height: 100%; background: #00ffcc; width: 0%; transition: width 0.1s;"></div>
+            <div class="section">
+                <h3 style="color: #00ffcc; margin-bottom: 10px;">🎨 Text-to-Image</h3>
+                <textarea id="promptInput" placeholder="A futuristic cyberpunk city in the rain, oil painting style..."></textarea>
+                <button class="myBtn gen-btn" id="genBtn">✦ Generate Image</button>
+                <canvas id="myOutputCanvas"></canvas>
+            </div>
+
+            <div class="section">
+                <h3 style="color: #ff0077; margin-bottom: 10px;">👁️ Image Analysis</h3>
+                <input type="file" id="fileInput" accept="image/*" style="margin-bottom: 10px;">
+                <input type="text" id="queryInput" placeholder="What's in this image? (Leave blank for default description)">
+                <button class="myBtn analyze-btn" id="analyzeBtn">🔍 Analyze Image</button>
+                <div id="resultBox" class="result-box" style="display: none;">
+                    <strong>AI Observation:</strong><br>
+                    <span id="resultText"></span>
+                </div>
+            </div>
+
+            <div id="progressWrap">
+                <div id="progressBar"></div>
             </div>
         </div>
 
-        <canvas id="myOutputCanvas"></canvas>
-        <div id="myStatus">Ready to load.</div>
+        <div id="myStatus">Ready to begin.</div>
     </div>
 
-<script type="module">
-    import {
-        AutoProcessor,
-        MultiModalityCausalLM,
-        RawImage,
-        env
-    } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
+    <script type="module">
+        import { 
+            AutoProcessor, 
+            MultiModalityCausalLM, 
+            RawImage, 
+            env 
+        } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.17";
 
-    // Standard v4 setup
-    env.allowLocalModels = false;
+        env.allowLocalModels = false;
 
-    // DOM refs
-    const initBtn = document.getElementById('initBtn');
-    const uiBody = document.getElementById('uiBody');
-    const fileInput = document.getElementById('fileInput');
-    const queryInput = document.getElementById('queryInput');
-    const analyzeBtn = document.getElementById('analyzeBtn');
-    const resultText = document.getElementById('resultText');
-    const resultBox = document.getElementById('resultBox');
-    const statusMsg = document.getElementById('statusMsg');
-    const progressBar = document.getElementById('progressBar');
-    const progressWrap = document.getElementById('progressWrap');
+        let model = null;
+        let processor = null;
 
-    let model = null;
-    let processor = null;
+        // DOM Elements
+        const initBtn = document.getElementById('initBtn');
+        const mainUI = document.getElementById('mainUI');
+        const loadSection = document.getElementById('loadSection');
+        const statusMsg = document.getElementById('myStatus');
+        const progressBar = document.getElementById('progressBar');
+        const progressWrap = document.getElementById('progressWrap');
+        
+        const promptInput = document.getElementById('promptInput');
+        const genBtn = document.getElementById('genBtn');
+        const myCanvas = document.getElementById('myOutputCanvas');
 
-    // --- 1. Load Model (Same as T2I page) ---
-    initBtn.addEventListener('click', async () => {
-        initBtn.disabled = true;
-        statusMsg.textContent = 'Initializing WebGPU...';
-        progressWrap.style.display = 'block';
+        const fileInput = document.getElementById('fileInput');
+        const queryInput = document.getElementById('queryInput');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const resultBox = document.getElementById('resultBox');
+        const resultText = document.getElementById('resultText');
 
-        try {
-            const MODEL_ID = "onnx-community/Janus-Pro-1B-ONNX";
+        // --- 1. INITIALIZE MODEL ---
+        initBtn.onclick = async () => {
+            initBtn.disabled = true;
+            statusMsg.textContent = '⏳ Loading Janus-Pro (1.3B)...';
+            
+            try {
+                const MODEL_ID = "onnx-community/Janus-Pro-1B-ONNX";
+                
+                processor = await AutoProcessor.from_pretrained(MODEL_ID);
+                model = await MultiModalityCausalLM.from_pretrained(MODEL_ID, {
+                    device: 'webgpu',
+                    dtype: {
+                        prepare_inputs_embeds: 'q4',
+                        language_model: 'q4',
+                        lm_head: 'fp16',
+                        gen_head: 'fp16',
+                        gen_img_embeds: 'fp16',
+                        image_decode: 'fp32',
+                    }
+                });
 
-            processor = await AutoProcessor.from_pretrained(MODEL_ID);
-            model = await MultiModalityCausalLM.from_pretrained(MODEL_ID, {
-                device: 'webgpu',
-                dtype: {
-                    prepare_inputs_embeds: 'q4',
-                    language_model: 'q4',
-                    lm_head: 'fp16',
-                    gen_head: 'fp16',
-                    gen_img_embeds: 'fp16',
-                    image_decode: 'fp32',
-                }
-            });
+                statusMsg.textContent = '🟢 WebGPU Active & Model Ready';
+                loadSection.style.display = 'none';
+                mainUI.style.display = 'block';
+            } catch (err) {
+                statusMsg.textContent = '❌ Load failed: ' + err.message;
+                initBtn.disabled = false;
+            }
+        };
 
-            statusMsg.textContent = '🟢 Ready';
-            initBtn.style.display = 'none';
-            uiBody.style.display = 'block';
-            progressWrap.style.display = 'none';
-        } catch (err) {
-            statusMsg.textContent = '❌ Load failed: ' + err.message;
-            initBtn.disabled = false;
-        }
-    });
+        // --- 2. TEXT TO IMAGE GENERATION ---
+        genBtn.onclick = async () => {
+            const prompt = promptInput.value.trim();
+            if (!prompt) return alert("Please enter a prompt");
 
-    // --- 2. Analyze Image (V4 Multimodal logic) ---
-    analyzeBtn.addEventListener('click', async () => {
-        const file = fileInput.files[0];
-        if (!file) return alert("Please select an image");
+            genBtn.disabled = true;
+            myCanvas.style.display = 'none';
+            resultBox.style.display = 'none';
+            progressWrap.style.display = 'block';
+            statusMsg.textContent = '🎨 Drawing (Generating 576 tokens)...';
 
-        analyzeBtn.disabled = true;
-        statusMsg.textContent = 'Reading image...';
+            try {
+                const conversation = [{ role: 'user', content: prompt }];
+                const inputs = await processor(conversation, { chat_template: 'text_to_image' });
+                
+                const numImageTokens = 576; 
+                const promptLen = inputs.input_ids.dims.at(-1);
 
-        try {
-            // Convert file to RawImage
-            const blobURL = URL.createObjectURL(file);
-            const image = await RawImage.fromURL(blobURL);
-            URL.revokeObjectURL(blobURL);
+                const output = await model.generate({
+                    ...inputs,
+                    max_new_tokens: numImageTokens,
+                    do_sample: true,
+                    temperature: 1.0,
+                    callback_function: (outputs) => {
+                        const current = outputs[0].output_ids.length - promptLen;
+                        progressBar.style.width = ((current / numImageTokens) * 100) + "%";
+                    }
+                });
 
-            // IMPORTANT: Janus-Pro vision prompt formatting
-            const conversation = [
-                {
+                statusMsg.textContent = '✨ Reconstruction...';
+                const imageTokens = output.slice(null, [promptLen, null]);
+                const decodedImage = await model.decode_image(imageTokens);
+
+                await decodedImage.toCanvas(myCanvas);
+                myCanvas.style.display = 'block';
+                statusMsg.textContent = '✅ Generation Complete';
+            } catch (err) {
+                statusMsg.textContent = '❌ Gen Error: ' + err.message;
+            } finally {
+                genBtn.disabled = false;
+                progressWrap.style.display = 'none';
+                progressBar.style.width = "0%";
+            }
+        };
+
+        // --- 3. IMAGE UNDERSTANDING ---
+        analyzeBtn.onclick = async () => {
+            const file = fileInput.files[0];
+            if (!file) return alert("Please upload an image first");
+
+            analyzeBtn.disabled = true;
+            resultBox.style.display = 'none';
+            statusMsg.textContent = '⏳ Analyzing pixels...';
+
+            try {
+                const blobURL = URL.createObjectURL(file);
+                const image = await RawImage.fromURL(blobURL);
+                URL.revokeObjectURL(blobURL);
+
+                const conversation = [{
                     role: '<|User|>',
-                    content: '<image_placeholder>\n' + (queryInput.value || "Describe this image."),
+                    content: '<image_placeholder>\n' + (queryInput.value || "Describe this image in detail."),
                     images: [image],
-                }
-            ];
+                }];
 
-            statusMsg.textContent = 'Encoding & Thinking...';
-            
-            // Apply chat template for vision
-            const inputs = await processor(conversation);
+                const inputs = await processor(conversation);
+                const output_ids = await model.generate({
+                    ...inputs,
+                    max_new_tokens: 128,
+                    do_sample: false,
+                });
 
-            const output_ids = await model.generate({
-                ...inputs,
-                max_new_tokens: 128,
-                do_sample: false, // Better for analysis/description
-            });
+                const promptLen = inputs.input_ids.dims.at(-1);
+                const newTokens = output_ids.slice(null, [promptLen, null]);
+                const decoded = processor.batch_decode(newTokens, { skip_special_tokens: true });
 
-            // Slicing tokens (removing prompt tokens from output)
-            const prompt_len = inputs.input_ids.dims.at(-1);
-            const new_tokens = output_ids.slice(null, [prompt_len, null]);
-            
-            const decoded = processor.batch_decode(new_tokens, {
-                skip_special_tokens: true,
-            });
-
-            resultText.textContent = decoded[0].trim();
-            resultBox.style.display = 'block';
-            statusMsg.textContent = '✅ Analysis Complete';
-        } catch (err) {
-            console.error(err);
-            statusMsg.textContent = '❌ Error: ' + err.message;
-        } finally {
-            analyzeBtn.disabled = false;
-        }
-    });
-</script>
+                resultText.textContent = decoded[0].trim();
+                resultBox.style.display = 'block';
+                statusMsg.textContent = '✅ Analysis Complete';
+            } catch (err) {
+                statusMsg.textContent = '❌ Analysis Error: ' + err.message;
+            } finally {
+                analyzeBtn.disabled = false;
+            }
+        };
+    </script>
 </body>
 </html>
