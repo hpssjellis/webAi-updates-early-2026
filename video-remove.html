@@ -21,11 +21,11 @@
         .controls { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
         button { padding: 10px 24px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
         button:disabled { opacity: 0.4; cursor: not-allowed; }
-        #myLoadBtn      { background: #00ffcc; color: #000; }
-        #myStartBtn     { background: #ff0077; color: #fff; }
-        #myStopBtn      { background: #333;    color: #eee; }
-        #myRecordBtn    { background: #ff6600; color: #fff; }
-        #myStopRecBtn   { background: #333;    color: #eee; }
+        #myLoadBtn    { background: #00ffcc; color: #000; }
+        #myStartBtn   { background: #ff0077; color: #fff; }
+        #myStopBtn    { background: #333;    color: #eee; }
+        #myRecordBtn  { background: #ff6600; color: #fff; }
+        #myStopRecBtn { background: #333;    color: #eee; }
         #myStatus { margin-top: 14px; font-family: monospace; font-size: 0.78rem; color: #666; text-align: center; max-width: 500px; }
         #myDownloadArea { margin-top: 14px; }
         #myDownloadArea a { color: #00ffcc; font-size: 0.85rem; text-decoration: none; border: 1px solid #00ffcc; padding: 8px 18px; border-radius: 6px; }
@@ -38,14 +38,15 @@
     <p class="sub">WebGPU · Runs 100% locally · No data leaves your device</p>
 
     <div class="canvases">
-        <div class="panel"><span>Camera Feed</span><canvas id="mySrcCanvas"></canvas></div>
-        <div class="panel"><span>Background Removed</span><canvas id="myBgCanvas"></canvas></div>
+        <div class="panel"><span>Camera Feed</span><canvas id="mySrcCanvas" width="640" height="480"></canvas></div>
+        <div class="panel"><span>Background Removed</span><canvas id="myBgCanvas" width="640" height="480"></canvas></div>
     </div>
 
+    <!-- Hidden video — pixel source only, never shown -->
     <video id="myVideo" autoplay playsinline muted></video>
 
     <div class="controls">
-        <button id="myLoadBtn">⚡ Load MODNet</button>
+        <button id="myLoadBtn" disabled>⚡ Load MODNet</button>
         <button id="myStartBtn"   disabled>▶ Start</button>
         <button id="myStopBtn"    disabled>⏹ Stop</button>
         <button id="myRecordBtn"  disabled>⏺ Record</button>
@@ -65,6 +66,7 @@
         const myVideo      = document.getElementById('myVideo');
         const mySrcCanvas  = document.getElementById('mySrcCanvas');
         const myBgCanvas   = document.getElementById('myBgCanvas');
+        // willReadFrequently speeds up the repeated getImageData calls in the mask composite
         const mySrcCtx     = mySrcCanvas.getContext('2d', { willReadFrequently: true });
         const myBgCtx      = myBgCanvas.getContext('2d',  { willReadFrequently: true });
         const myStatus     = document.getElementById('myStatus');
@@ -76,44 +78,53 @@
         const myDlArea     = document.getElementById('myDownloadArea');
 
         // ── State ─────────────────────────────────────────────────────────────
-        let myModel     = null;
-        let myProcessor = null;
-        let myRunning   = false;
-        let myRecorder  = null;
-        let myChunks    = [];
+        let myModel      = null;
+        let myProcessor  = null;
+        let myRunning    = false;
+        let myInferring  = false;   // guard: only one inference in-flight at a time
+        let myRecorder   = null;
+        let myChunks     = [];
 
-        // ── Camera: start immediately on page load ────────────────────────────
-        (async () => {
+        // ── Camera — start immediately, exactly like the working YOLO code ────
+        // Key insight from YOLO: draw the video element inside requestAnimationFrame
+        // directly onto the canvas each frame. No persistent transform. No IIFE.
+        // Mirror per-frame by saving/restoring context state around each drawImage.
+        async function myStartCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { width: 640, height: 480, facingMode: 'user' }
                 });
                 myVideo.srcObject = stream;
                 await new Promise(r => myVideo.onloadedmetadata = () => {
+                    // Resize canvases to match actual camera resolution
                     const W = myVideo.videoWidth  || 640;
                     const H = myVideo.videoHeight || 480;
                     mySrcCanvas.width  = myBgCanvas.width  = W;
                     mySrcCanvas.height = myBgCanvas.height = H;
                     r();
                 });
-                // Mirror the source preview to match what the user expects from a selfie cam
-                mySrcCtx.translate(mySrcCanvas.width, 0);
-                mySrcCtx.scale(-1, 1);
-
-                myStatus.textContent = 'Camera ready. Click "Load MODNet" to begin.';
+                myStatus.textContent = 'Camera ready — click "Load MODNet" to continue.';
                 myLoadBtn.disabled = false;
 
-                // Draw the live camera feed to mySrcCanvas so user can see themselves
-                function myDrawPreview() {
+                // Continuous 60fps preview loop — mirrors video onto src canvas each frame.
+                // Using save/restore + per-frame transform (not a persistent one) so the
+                // canvas context is never left in a corrupted state between frames.
+                function myPreviewLoop() {
+                    mySrcCtx.save();
+                    mySrcCtx.translate(mySrcCanvas.width, 0);
+                    mySrcCtx.scale(-1, 1);
                     mySrcCtx.drawImage(myVideo, 0, 0, mySrcCanvas.width, mySrcCanvas.height);
-                    requestAnimationFrame(myDrawPreview);
+                    mySrcCtx.restore();
+                    requestAnimationFrame(myPreviewLoop);
                 }
-                myDrawPreview();
+                myPreviewLoop();
 
             } catch (e) {
                 myStatus.textContent = '❌ Camera denied: ' + e.message;
             }
-        })();
+        }
+
+        myStartCamera();
 
         // ── Model load ────────────────────────────────────────────────────────
         myLoadBtn.onclick = async () => {
@@ -122,6 +133,7 @@
             console.log('[MODNet] Loading model...');
 
             try {
+                // dtype: 'fp32' is required — fp16 produces corrupt mask output on WebGPU
                 myModel = await AutoModel.from_pretrained('Xenova/modnet', {
                     device: 'webgpu',
                     dtype: 'fp32',
@@ -135,8 +147,6 @@
                             myStatus.textContent = `↓ ${p.file}  ${mb} / ${tot} MB  (${pct}%)`;
                         } else if (p.status === 'done') {
                             myStatus.textContent = `✔ Loaded: ${p.file}`;
-                        } else if (p.status === 'ready') {
-                            console.log('[MODNet] Model ready.');
                         }
                     },
                 });
@@ -154,41 +164,49 @@
             }
         };
 
-        // ── Inference loop ────────────────────────────────────────────────────
-        async function myLoop() {
-            if (!myRunning) return;
+        // ── Inference — fire-and-forget pattern from YOLO ─────────────────────
+        // Never blocks the preview loop. Sets myInferring guard so calls don't stack.
+        // The src canvas is always current (drawn by myPreviewLoop at 60fps),
+        // so we snapshot it at the moment fireInference() is called.
+        function myFireInference() {
+            if (myInferring || !myModel || !myRunning) return;
+            myInferring = true;
 
-            // Snapshot the (already-mirrored) source canvas
-            try {
-                const myFrame = await RawImage.fromCanvas(mySrcCanvas);
-                const { pixel_values } = await myProcessor(myFrame);
-                const { output } = await myModel({ input: pixel_values });
+            // Snapshot the current mirrored frame from the src canvas
+            const myFrame = RawImage.fromCanvas(mySrcCanvas);
 
-                const myMask = await RawImage
-                    .fromTensor(output[0].mul(255).to('uint8'))
-                    .resize(mySrcCanvas.width, mySrcCanvas.height);
+            myProcessor(myFrame)
+                .then(({ pixel_values }) => myModel({ input: pixel_values }))
+                .then(async ({ output }) => {
+                    // output[0] is a float32 [0-1] alpha matte tensor
+                    const myMask = await RawImage
+                        .fromTensor(output[0].mul(255).to('uint8'))
+                        .resize(mySrcCanvas.width, mySrcCanvas.height);
 
-                // Draw source frame then punch out the background via alpha mask
-                myBgCtx.clearRect(0, 0, myBgCanvas.width, myBgCanvas.height);
-                myBgCtx.drawImage(mySrcCanvas, 0, 0);
+                    // Composite: copy the current src frame, then apply mask as alpha
+                    myBgCtx.clearRect(0, 0, myBgCanvas.width, myBgCanvas.height);
+                    myBgCtx.drawImage(mySrcCanvas, 0, 0);
 
-                const myFrameData = myBgCtx.getImageData(0, 0, myBgCanvas.width, myBgCanvas.height);
-                const myPixels    = myFrameData.data;
-                const myMaskData  = myMask.data;
+                    const myImgData  = myBgCtx.getImageData(0, 0, myBgCanvas.width, myBgCanvas.height);
+                    const myPixels   = myImgData.data;
+                    const myMaskData = myMask.data;   // 1-channel Uint8Array
 
-                for (let i = 0; i < myMaskData.length; i++) {
-                    myPixels[i * 4 + 3] = myMaskData[i];
-                }
-                myBgCtx.putImageData(myFrameData, 0, 0);
-
-                myStatus.textContent = '🟢 Running — WebGPU active';
-
-            } catch (e) {
-                console.error('[MODNet] Frame error:', e);
-                myStatus.textContent = '⚠️ Frame error — retrying...';
-            }
-
-            setTimeout(myLoop, 0);
+                    for (let i = 0; i < myMaskData.length; i++) {
+                        myPixels[i * 4 + 3] = myMaskData[i];
+                    }
+                    myBgCtx.putImageData(myImgData, 0, 0);
+                    myStatus.textContent = '🟢 Running — WebGPU active';
+                })
+                .catch(e => {
+                    console.error('[MODNet] Frame error:', e);
+                    myStatus.textContent = '⚠️ Frame error (retrying)';
+                })
+                .finally(() => {
+                    myInferring = false;
+                    // Tail-call: schedule next inference immediately after this one finishes,
+                    // but only if still running — prevents unbounded queue buildup
+                    if (myRunning) setTimeout(myFireInference, 0);
+                });
         }
 
         // ── Inference controls ────────────────────────────────────────────────
@@ -197,7 +215,7 @@
             myStartBtn.disabled  = true;
             myStopBtn.disabled   = false;
             myRecordBtn.disabled = false;
-            myLoop();
+            myFireInference();
         };
 
         myStopBtn.onclick = () => {
@@ -205,37 +223,30 @@
             myStartBtn.disabled  = false;
             myStopBtn.disabled   = true;
             myRecordBtn.disabled = true;
-            // Stop recording too if active
             if (myRecorder && myRecorder.state === 'recording') myStopRecBtn.click();
             myStatus.textContent = '⏸ Paused.';
         };
 
-        // ── Recording: capture the output (bg-removed) canvas as WebM ─────────
+        // ── Recording ─────────────────────────────────────────────────────────
         myRecordBtn.onclick = () => {
             myChunks = [];
             myDlArea.innerHTML = '';
 
-            // captureStream() taps directly into the canvas rendering pipeline
-            const myStream = myBgCanvas.captureStream(30); // 30fps target
+            const myStream = myBgCanvas.captureStream(30);
             myRecorder = new MediaRecorder(myStream, {
                 mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-                    ? 'video/webm;codecs=vp9'
-                    : 'video/webm',
+                    ? 'video/webm;codecs=vp9' : 'video/webm',
             });
 
-            myRecorder.ondataavailable = e => {
-                if (e.data.size > 0) myChunks.push(e.data);
-            };
-
+            myRecorder.ondataavailable = e => { if (e.data.size > 0) myChunks.push(e.data); };
             myRecorder.onstop = () => {
-                const myBlob    = new Blob(myChunks, { type: 'video/webm' });
-                const myUrl     = URL.createObjectURL(myBlob);
-                const myAnchor  = document.createElement('a');
-                myAnchor.href      = myUrl;
-                myAnchor.download  = `modnet-${Date.now()}.webm`;
-                myAnchor.textContent = '⬇️ Download Recorded Video (.webm)';
-                myDlArea.innerHTML = '';
-                myDlArea.appendChild(myAnchor);
+                const myBlob   = new Blob(myChunks, { type: 'video/webm' });
+                const myUrl    = URL.createObjectURL(myBlob);
+                const myLink   = document.createElement('a');
+                myLink.href      = myUrl;
+                myLink.download  = `modnet-${Date.now()}.webm`;
+                myLink.textContent = '⬇️ Download Recorded Video (.webm)';
+                myDlArea.appendChild(myLink);
                 myStatus.textContent = '✅ Recording saved — click the link to download.';
             };
 
