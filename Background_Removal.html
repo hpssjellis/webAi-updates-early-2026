@@ -1,9 +1,3 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>AI Background Blaster</title>
-</head>
 <body style="background: #111; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px;">
 
     <h2 style="color: #ff0077;">✂️ AI Background Remover</h2>
@@ -16,78 +10,97 @@
 
         <div style="text-align: center;">
             <p style="color: #888;">Transparent Result</p>
-            <canvas id="myOutputCanvas" width="320" height="240" style="background-image: linear-gradient(45deg, #222 25%, transparent 25%), linear-gradient(-45deg, #222 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #222 75%), linear-gradient(-45deg, transparent 75%, #222 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0px; border: 2px solid #ff0077; border-radius: 8px;"></canvas>
+            <canvas id="myOutputCanvas" width="320" height="240" style="background-image: linear-gradient(45deg, #222 25%, transparent 25%), linear-gradient(-45deg, #222 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #222 75%), linear-gradient(-45deg, transparent 75%, #222 75%); background-size: 20px 20px; border: 2px solid #ff0077; border-radius: 8px;"></canvas>
         </div>
     </div>
 
     <div style="margin-top: 20px; text-align: center;">
-        <button id="myActionBtn" onclick="window.myProcessFrame()" style="padding: 12px 30px; background: #ff0077; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 1rem; color: white;">✨ Remove Background</button>
+        <button id="myActionBtn" style="padding: 12px 30px; background: #ff0077; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 1rem; color: white;">
+            ✨ Start Background Removal
+        </button>
         <div id="myStatus" style="margin-top: 10px; font-family: monospace; font-size: 0.8rem; color: #888;">Click to load model</div>
     </div>
 
     <script type="module">
         import { pipeline, env, RawImage } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
 
-        // Global settings
         env.allowLocalModels = false;
         
         let myRemoverPipe = null;
         const myCam = document.getElementById("myCam");
         const myOutputCanvas = document.getElementById("myOutputCanvas");
-        const myCtx = myOutputCanvas.getContext("2d");
+        const myCtx = myOutputCanvas.getContext("2d", { willReadFrequently: true });
         const myStatus = document.getElementById("myStatus");
 
-        // 1. Initialize Camera
         async function mySetupCamera() {
             const myStream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
             myCam.srcObject = myStream;
+            return new Promise(resolve => myCam.onloadedmetadata = () => {
+                myCam.play();
+                resolve();
+            });
         }
 
-        // 2. The Core Removal Logic
-        window.myProcessFrame = async function() {
-            if (!myRemoverPipe) {
-                myStatus.innerText = "⏳ Loading RMBG-1.4 (WebGPU)...";
-                try {
-                    // We use the image-segmentation task for background removal
-                    myRemoverPipe = await pipeline("image-segmentation", "briaai/RMBG-1.4", {
-                        device: "webgpu" 
-                    });
-                    myStatus.innerText = "🟢 Model Ready!";
-                    await mySetupCamera();
-                } catch (myErr) {
-                    myStatus.innerText = "❌ WebGPU Error: " + myErr.message;
-                    return;
+        async function myProcessLoop() {
+            if (!myRemoverPipe) return;
+
+            try {
+                // FIX: Pass the video ELEMENT directly to the pipeline
+                const myOutput = await myRemoverPipe(myCam);
+                
+                // The mask comes back as a RawImage in the first element
+                const myMask = myOutput[0].mask; 
+                
+                // Resize mask to match our display canvas and get the raw bytes
+                const myResizedMask = await myMask.resize(320, 240);
+                const myMaskBytes = myResizedMask.data; 
+
+                // Draw the current camera frame to our canvas
+                myCtx.clearRect(0, 0, 320, 240);
+                myCtx.save();
+                // Mirror the output to match the mirrored camera input
+                myCtx.translate(320, 0);
+                myCtx.scale(-1, 1);
+                myCtx.drawImage(myCam, 0, 0, 320, 240);
+                myCtx.restore();
+
+                // Manipulate the Alpha channel (transparency)
+                const myImgData = myCtx.getImageData(0, 0, 320, 240);
+                for (let i = 0; i < myMaskBytes.length; ++i) {
+                    // i is the pixel index. Pixel i's alpha is at index (i * 4) + 3
+                    myImgData.data[i * 4 + 3] = myMaskBytes[i]; 
                 }
+
+                myCtx.putImageData(myImgData, 0, 0);
+                myStatus.innerText = "Running...";
+            } catch (myErr) {
+                console.error(myErr);
             }
 
-            myStatus.innerText = "🔮 Extracting subject...";
-            
-            // Capture current frame
-            const myRawImg = await RawImage.fromCanvas(myCam);
+            // Keep the loop going
+            requestAnimationFrame(myProcessLoop);
+        }
 
-            // Run AI to get the mask
-            const myOutput = await myRemoverPipe(myRawImg);
+        async function myInit() {
+            if (myRemoverPipe) return; // Prevent double clicks
             
-            // The model returns a mask. We apply it to the original image.
-            // In v4, we can often get the 'mask' directly from the output array
-            const myMask = myOutput[0].mask; 
-            
-            // Draw original to canvas
-            myCtx.drawImage(myCam, 0, 0, 320, 240);
-            
-            // Get original pixels and mask pixels
-            const myImgData = myCtx.getImageData(0, 0, 320, 240);
-            const myMaskData = await myMask.resize(320, 240).data; 
+            myStatus.innerText = "⏳ Loading RMBG-1.4 (WebGPU)...";
+            try {
+                await mySetupCamera();
+                
+                myRemoverPipe = await pipeline("image-segmentation", "briaai/RMBG-1.4", {
+                    device: "webgpu",
+                    dtype: "fp16" 
+                });
 
-            // Loop through pixels and update the Alpha channel (the 4th value: R,G,B,A)
-            for (let i = 0; i < myMaskData.length; ++i) {
-                myImgData.data[i * 4 + 3] = myMaskData[i]; 
+                myStatus.innerText = "🟢 Model Ready!";
+                myProcessLoop();
+            } catch (myErr) {
+                myStatus.innerText = "❌ Error: " + myErr.message;
             }
+        }
 
-            // Put the modified pixels back
-            myCtx.putImageData(myImgData, 0, 0);
-            myStatus.innerText = "✅ Done!";
-        };
+        // Static link to function
+        document.getElementById('myActionBtn').onclick = myInit;
     </script>
 </body>
-</html>
