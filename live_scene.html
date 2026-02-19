@@ -1,62 +1,87 @@
-<body style="font-family: sans-serif; padding: 20px; text-align: center; background: #111; color: white;">
-    <h1>Live Scene Description</h1>
-    <video id="myVideo" autoplay playsinline style="width: 100%; max-width: 500px; border: 2px solid #444; border-radius: 8px;"></video>
-    <div id="mySceneText" style="font-size: 1.2rem; margin-top: 20px; color: #5bc0de; min-height: 3em;">
-        Initializing scene analyzer...
+<body style="font-family: sans-serif; padding: 20px; text-align: center; background: #080808; color: white;">
+    <h1 style="color: #00ffcc;">✦ Live AI Scene Description</h1>
+    
+    <div style="position: relative; display: inline-block;">
+        <video id="myVideo" autoplay playsinline style="width: 100%; max-width: 500px; border: 2px solid #333; border-radius: 12px; background: #000;"></video>
+        <div id="loadingOverlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #888;">Starting camera...</div>
+    </div>
+
+    <div id="mySceneText" style="font-size: 1.4rem; margin-top: 20px; color: #5bc0de; min-height: 3em; max-width: 600px; margin-left: auto; margin-right: auto; line-height: 1.4;">
+        Initializing WebGPU...
     </div>
 
     <script type="module">
-        import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4';
+        // Using v4 next.17 for improved WebGPU and video element support
+        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.17';
+
+        // Performance flag: Allow shared array buffers for faster data transfer
+        env.allowLocalModels = false;
 
         let myCaptioner;
         const myVideoElement = document.getElementById('myVideo');
         const myResultDiv = document.getElementById('mySceneText');
+        const loadingOverlay = document.getElementById('loadingOverlay');
 
         async function mySetupCamera() {
-            const myStream = await navigator.mediaDevices.getUserMedia({ video: true });
-            myVideoElement.srcObject = myStream;
-            return new Promise(resolve => myVideoElement.onloadedmetadata = () => {
-                myVideoElement.play();
-                resolve();
-            });
+            try {
+                const myStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment", width: 640, height: 480 } 
+                });
+                myVideoElement.srcObject = myStream;
+                return new Promise(resolve => {
+                    myVideoElement.onloadedmetadata = () => {
+                        myVideoElement.play();
+                        loadingOverlay.style.display = 'none';
+                        resolve();
+                    };
+                });
+            } catch (err) {
+                throw new Error("Camera access denied or unavailable.");
+            }
         }
 
         async function myDescribeScene() {
-            if (myCaptioner) {
+            if (myCaptioner && myVideoElement.readyState >= 2) {
                 try {
-                    // We pass the video element to the image-to-text pipeline
-                    const myOutput = await myCaptioner(myVideoElement);
+                    // In v4, we can pass the HTMLVideoElement directly. 
+                    // It will capture the current frame internally.
+                    const myOutput = await myCaptioner(myVideoElement, {
+                        max_new_tokens: 25,
+                        // We use beam search or sampling for better descriptions
+                        do_sample: false, 
+                    });
                     
-                    if (myOutput && myOutput[0]) {
+                    if (myOutput && myOutput[0]?.generated_text) {
                         myResultDiv.innerText = myOutput[0].generated_text;
                     }
                 } catch (myError) {
-                    console.error("Captioning error:", myError);
+                    console.error("Inference Error:", myError);
                 }
             }
-            // Scene description is heavier than YOLO, so we wait 1 second between updates
-            setTimeout(myDescribeScene, 1000);
+            // Request next frame once previous inference finishes to prevent lag
+            requestAnimationFrame(() => setTimeout(myDescribeScene, 500));
         }
 
         async function myInit() {
             try {
                 await mySetupCamera();
-                myResultDiv.innerText = "Loading Scene Model (WebGPU)...";
+                myResultDiv.innerHTML = "Loading Scene Model (WebGPU)...<br><small style='color:#666'>~400MB download on first run</small>";
                 
-                // Using vit-gpt2 for fast browser-based captioning
+                // Using vit-gpt2-image-captioning. 
+                // device: 'webgpu' offloads the heavy matrix math to your graphics card.
                 myCaptioner = await pipeline('image-to-text', 'Xenova/vit-gpt2-image-captioning', { 
                     device: 'webgpu', 
-                    dtype: 'q8' 
+                    dtype: 'fp32' // Use fp32 for WebGPU if q8 isn't supported by your browser's current WGSL implementation
                 });
                 
                 myResultDiv.innerText = "Watching scene...";
                 myDescribeScene();
             } catch (myErr) {
                 myResultDiv.innerText = "Error: " + myErr.message;
+                myResultDiv.style.color = "#ff6666";
             }
         }
 
-        // Static link to start
         window.onload = myInit;
     </script>
 </body>
