@@ -1,0 +1,26 @@
+<body style="font-family: sans-serif; padding: 20px; text-align: center;">
+    <h1>Vision AI</h1>
+    <select id="myTask" style="padding: 10px;">
+        <option value="image-classification">Classification (What is this?)</option>
+        <option value="object-detection">Object Detection (Find things)</option>
+        <option value="image-to-text">Image Captioning (Describe it)</option>
+    </select>
+    <br><br>
+    <input id="myUrl" value="https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/cats.jpg" style="width: 80%; padding: 10px;">
+    <br><br>
+    <button id="myRunBtn" style="padding: 10px 20px;">Process Image</button>
+    <pre id="myOutput" style="text-align: left; background: #eee; padding: 15px; margin-top: 20px;"></pre>
+
+    <script type="module">
+        import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4';
+        async function myRun() {
+            const myTask = document.getElementById('myTask').value;
+            const myUrl = document.getElementById('myUrl').value;
+            document.getElementById('myOutput').innerText = "Analyzing Image (Large Download)...";
+            const myVisionPipe = await pipeline(myTask, null, { device: 'webgpu' });
+            const myResult = await myVisionPipe(myUrl);
+            document.getElementById('myOutput').innerText = JSON.stringify(myResult, null, 2);
+        }
+        document.getElementById('myRunBtn').onclick = myRun;
+    </script>
+</body>
