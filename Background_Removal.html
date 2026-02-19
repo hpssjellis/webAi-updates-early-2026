@@ -15,7 +15,7 @@
     <h2>✂️ Background Remover</h2>
 
     <video id="myCam" autoplay playsinline muted style="transform: scaleX(-1);"></video>
-    <canvas id="myOutputCanvas" width="320" height="240"></canvas>
+    <canvas id="myOutputCanvas"></canvas>
 
     <div>
         <button id="myLoadBtn" style="background: #ff0077; color: #fff;">⚡ Load Model</button>
@@ -34,15 +34,16 @@
         const myLoadBtn = document.getElementById("myLoadBtn");
         const mySnapBtn = document.getElementById("mySnapBtn");
 
+        // willReadFrequently: true suppresses the browser performance warning and
+        // speeds up the getImageData calls toCanvas() makes internally.
+        const myCtx = myCanvas.getContext("2d", { willReadFrequently: true });
+
         navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } })
             .then(stream => { myCam.srcObject = stream; })
             .catch(() => { myStatus.innerText = "❌ Camera access denied."; });
 
         myLoadBtn.onclick = async () => {
             myLoadBtn.disabled = true;
-            // NOTE: BEN2-ONNX has a confirmed open bug on WebGPU (issue #1272) where
-            // the mask output is corrupted, causing toCanvas() to fail with
-            // "Cannot read properties of undefined". WASM produces correct results.
             myStatus.innerText = "⏳ Loading model (WASM)...";
             console.log("[BG Remover] Loading model...");
             try {
@@ -84,7 +85,6 @@
         mySnapBtn.onclick = async () => {
             mySnapBtn.disabled = true;
             myStatus.innerText = "⏳ Processing...";
-            console.log("[BG Remover] Running inference...");
 
             const mySnap = document.createElement("canvas");
             mySnap.width  = myCam.videoWidth  || 320;
@@ -96,19 +96,19 @@
 
             try {
                 const myOutput = await myPipe(mySnap);
-                console.log("[BG Remover] Output:", myOutput);
-                console.log("[BG Remover] Output type:", typeof myOutput);
-                console.log("[BG Remover] Is array:", Array.isArray(myOutput));
-                console.log("[BG Remover] Output[0]:", myOutput[0]);
-                console.log("[BG Remover] Output keys:", myOutput ? Object.keys(myOutput) : "null");
-                if (myOutput[0]) {
-                    console.log("[BG Remover] Output[0] keys:", Object.keys(myOutput[0]));
-                    console.log("[BG Remover] Output[0] type:", myOutput[0].constructor?.name);
-                }
-                // Try all known output shapes
-                const img = myOutput[0] ?? myOutput.output ?? myOutput;
-                console.log("[BG Remover] Resolved img:", img, "Has toCanvas:", typeof img?.toCanvas);
-                await img.toCanvas(myCanvas);
+                const myImg = myOutput[0];
+                console.log("[BG Remover] Result image:", myImg.width, "x", myImg.height, myImg);
+
+                // Resize canvas to exactly match the output image before drawing.
+                // If the canvas has a different size, toCanvas() renders outside the
+                // visible area and the result appears blank.
+                myCanvas.width  = myImg.width;
+                myCanvas.height = myImg.height;
+
+                // Draw the RGBA result image onto the correctly-sized canvas
+                const myImageData = myImg.toImageData();
+                myCtx.putImageData(myImageData, 0, 0);
+
                 myStatus.innerText = "✅ Done!";
             } catch (e) {
                 myStatus.innerText = "❌ " + e.message;
