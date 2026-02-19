@@ -97,7 +97,18 @@
             try {
                 const myOutput = await myPipe(mySnap);
                 console.log("[BG Remover] Output:", myOutput);
-                await myOutput[0].toCanvas(myCanvas);
+                console.log("[BG Remover] Output type:", typeof myOutput);
+                console.log("[BG Remover] Is array:", Array.isArray(myOutput));
+                console.log("[BG Remover] Output[0]:", myOutput[0]);
+                console.log("[BG Remover] Output keys:", myOutput ? Object.keys(myOutput) : "null");
+                if (myOutput[0]) {
+                    console.log("[BG Remover] Output[0] keys:", Object.keys(myOutput[0]));
+                    console.log("[BG Remover] Output[0] type:", myOutput[0].constructor?.name);
+                }
+                // Try all known output shapes
+                const img = myOutput[0] ?? myOutput.output ?? myOutput;
+                console.log("[BG Remover] Resolved img:", img, "Has toCanvas:", typeof img?.toCanvas);
+                await img.toCanvas(myCanvas);
                 myStatus.innerText = "✅ Done!";
             } catch (e) {
                 myStatus.innerText = "❌ " + e.message;
