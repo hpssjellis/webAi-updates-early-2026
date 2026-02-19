@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>AI Scene Describer</title>
+</head>
+<body style="background: #111; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px;">
+
+    <h2 style="color: #00ffcc;">👁️ Live Scene Describer</h2>
+
+    <div style="position: relative; width: 480px; height: 360px; background: #000; border: 2px solid #333; border-radius: 8px; overflow: hidden;">
+        <video id="myCam" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover;"></video>
+        <div id="myCaptionOverlay" style="position: absolute; bottom: 0; width: 100%; background: rgba(0,0,0,0.7); padding: 15px; box-sizing: border-box; color: #00ffcc; font-weight: bold; text-align: center; font-size: 1.1rem;">
+            Ready to describe...
+        </div>
+    </div>
+
+    <div style="margin-top: 20px; display: flex; gap: 10px; align-items: center;">
+        <button id="myStartBtn" onclick="window.myStartApp()" style="padding: 10px 25px; background: #00ffcc; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">▶ Start AI Vision</button>
+        <div id="myStatus" style="font-family: monospace; font-size: 0.8rem; color: #888;">Click start to load BLIP model</div>
+    </div>
+
+    <canvas id="mySnap" width="384" height="384" style="display: none;"></canvas>
+
+    <script type="module">
+        import { pipeline, env, RawImage } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4/dist/transformers.min.js";
+
+        // Config
+        env.allowLocalModels = false;
+        env.useBrowserCache = true;
+
+        let myCaptioner = null;
+        let myIsRunning = false;
+        const myCam = document.getElementById("myCam");
+        const mySnap = document.getElementById("mySnap");
+        const mySnapCtx = mySnap.getContext("2d", { willReadFrequently: true });
+        const myStatus = document.getElementById("myStatus");
+        const myDisplay = document.getElementById("myCaptionOverlay");
+
+        // 1. Camera Setup
+        async function myStartCamera() {
+            const myStream = await navigator.mediaDevices.getUserMedia({
+                video: { width: 480, height: 360, facingMode: "environment" }
+            });
+            myCam.srcObject = myStream;
+            return new Promise(resolve => myCam.onloadedmetadata = resolve);
+        }
+
+        // 2. Main Inference Loop
+        async function myInferenceLoop() {
+            if (!myIsRunning || !myCaptioner) return;
+
+            // Draw current frame to hidden canvas
+            mySnapCtx.drawImage(myCam, 0, 0, mySnap.width, mySnap.height);
+            
+            try {
+                const myFrame = RawImage.fromCanvas(mySnap);
+                
+                // Generate caption
+                const myOutput = await myCaptioner(myFrame, {
+                    max_new_tokens: 30
+                });
+
+                const myText = myOutput[0].generated_text;
+                myDisplay.innerText = myText.charAt(0).toUpperCase() + myText.slice(1);
+            } catch (myErr) {
+                console.error("AI Error:", myErr);
+            }
+
+            // Continue loop
+            requestAnimationFrame(myInferenceLoop);
+        }
+
+        // 3. App Entry Point
+        window.myStartApp = async function() {
+            const myBtn = document.getElementById("myStartBtn");
+            myBtn.disabled = true;
+            myStatus.innerText = "⏳ Loading BLIP Model (WebGPU)...";
+
+            try {
+                await myStartCamera();
+
+                // Determine best device
+                let myDevice = "wasm";
+                if (navigator.gpu) {
+                    const myAdapter = await navigator.gpu.requestAdapter();
+                    if (myAdapter) myDevice = "webgpu";
+                }
+
+                // Load the image-to-text pipeline
+                myCaptioner = await pipeline("image-to-text", "Xenova/blip-image-captioning-base", {
+                    device: myDevice
+                });
+
+                myStatus.innerText = `🟢 Running on ${myDevice.toUpperCase()}`;
+                myBtn.style.display = "none";
+                myIsRunning = true;
+                myInferenceLoop();
+            } catch (myErr) {
+                myStatus.innerText = "❌ Error: " + myErr.message;
+                myBtn.disabled = false;
+            }
+        };
+    </script>
+</body>
+</html>
