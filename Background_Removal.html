@@ -1,6 +1,13 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>v4 AI Background Remover</title>
+</head>
 <body style="background: #111; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px;">
 
-    <h2 style="color: #ff0077;">✂️ AI Background Remover</h2>
+    <h2 style="color: #ff0077;">✂️ Transformers.js v4 Background Remover</h2>
 
     <div style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center;">
         <div style="text-align: center;">
@@ -18,17 +25,17 @@
         <button id="myActionBtn" style="padding: 12px 30px; background: #ff0077; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 1rem; color: white;">
             ✨ Start Background Removal
         </button>
-        <div id="myStatus" style="margin-top: 10px; font-family: monospace; font-size: 0.8rem; color: #888;">Click to load model (approx. 170MB)</div>
+        <div id="myStatus" style="margin-top: 10px; font-family: monospace; font-size: 0.8rem; color: #888;">Click to load v4 model (WebGPU)</div>
     </div>
 
     <script type="module">
-        import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0-alpha.19";
+        // Updated to the v4 next CDN
+        import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
 
-        // Configuration
+        // Configuration for v4
         env.allowLocalModels = false;
         
         let myRemoverPipe = null;
-        let isProcessing = false;
         const myCam = document.getElementById("myCam");
         const myOutputCanvas = document.getElementById("myOutputCanvas");
         const myCtx = myOutputCanvas.getContext("2d", { willReadFrequently: true });
@@ -36,11 +43,13 @@
 
         async function mySetupCamera() {
             try {
-                const myStream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+                const myStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 320, height: 240 } 
+                });
                 myCam.srcObject = myStream;
                 return new Promise(resolve => myCam.onloadedmetadata = () => resolve());
             } catch (e) {
-                throw new Error("Camera access denied.");
+                throw new Error("Camera access denied. Please allow camera permissions.");
             }
         }
 
@@ -48,61 +57,78 @@
             if (!myRemoverPipe) return;
 
             try {
-                // 1. Capture current frame from video to an offscreen image
-                const bitmap = await createImageBitmap(myCam);
+                // 1. Capture current frame
+                const canvas = document.createElement('canvas');
+                canvas.width = myCam.videoWidth;
+                canvas.height = myCam.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(myCam, 0, 0);
                 
-                // 2. Run the model on the bitmap
-                const myOutput = await myRemoverPipe(bitmap);
+                // 2. Run the model
+                // In v4, we can pass the canvas directly
+                const result = await myRemoverPipe(canvas);
                 
-                // 3. Get the mask (which is returned as a canvas/image by the new API)
-                const maskCanvas = await myOutput.mask.toCanvas();
+                // 3. Extract the mask
+                // The RMBG-1.4 model returns a mask in the 'mask' property
+                const mask = await result.mask.toCanvas();
 
-                // 4. Draw to output canvas
-                myCtx.clearRect(0, 0, 320, 240);
+                // 4. Draw to output
+                myCtx.clearRect(0, 0, myOutputCanvas.width, myOutputCanvas.height);
                 
-                // Mirror the drawing
                 myCtx.save();
-                myCtx.translate(320, 0);
+                // Mirror the output to match the camera preview
+                myCtx.translate(myOutputCanvas.width, 0);
                 myCtx.scale(-1, 1);
                 
-                // Draw original video frame
+                // Draw original frame
                 myCtx.drawImage(myCam, 0, 0, 320, 240);
                 
-                // Use 'destination-in' to apply the mask as a transparency layer
+                // Composite the mask
                 myCtx.globalCompositeOperation = 'destination-in';
-                myCtx.drawImage(maskCanvas, 0, 0, 320, 240);
+                myCtx.drawImage(mask, 0, 0, 320, 240);
                 
                 myCtx.restore();
-                myCtx.globalCompositeOperation = 'source-over'; // Reset
 
-                myStatus.innerText = "Running... ✅";
+                myStatus.innerText = "Running on WebGPU ✅";
             } catch (myErr) {
-                console.error("Loop Error:", myErr);
+                console.error("Processing Error:", myErr);
             }
 
+            // Keep the loop going
             requestAnimationFrame(myProcessLoop);
         }
 
         async function myInit() {
             if (myRemoverPipe) return; 
             
-            myStatus.innerText = "⏳ Loading Model (this may take a minute)...";
+            myStatus.innerText = "⏳ Initializing WebGPU & Loading Model...";
+            
             try {
                 await mySetupCamera();
                 
-                // Using image-segmentation task
+                // Load the v4 pipeline
                 myRemoverPipe = await pipeline("image-segmentation", "briaai/RMBG-1.4", {
-                    device: "webgpu", // Use "wasm" if you don't have a dedicated GPU
+                    device: "webgpu", // v4's standout feature
                 });
 
-                myStatus.innerText = "🟢 Model Ready!";
+                myStatus.innerText = "🟢 WebGPU Active!";
                 myProcessLoop();
             } catch (myErr) {
                 myStatus.innerText = "❌ Error: " + myErr.message;
                 console.error(myErr);
+                
+                // Fallback attempt with WASM if WebGPU fails
+                if (myErr.message.includes('WebGPU')) {
+                    myStatus.innerText = "WebGPU failed. Trying WASM fallback...";
+                    myRemoverPipe = await pipeline("image-segmentation", "briaai/RMBG-1.4", {
+                        device: "wasm",
+                    });
+                    myProcessLoop();
+                }
             }
         }
 
         document.getElementById('myActionBtn').onclick = myInit;
     </script>
 </body>
+</html>
