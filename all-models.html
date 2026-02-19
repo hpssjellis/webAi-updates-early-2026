@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Transformers.js v4 Task Explorer</title>
+</head>
+<body style="font-family: system-ui, sans-serif; padding: 20px; max-width: 800px; margin: auto; text-align: center;">
+
+    <h1>AI Task Explorer (v4)</h1>
+
+    <div style="background: #f4f4f4; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+        <label for="myTaskSelect">Choose a Task:</label>
+        <select id="myTaskSelect" style="padding: 10px; border-radius: 5px; margin: 10px;">
+            <optgroup label="Text (NLP)">
+                <option value="sentiment-analysis">Sentiment Analysis (Text)</option>
+                <option value="summarization">Summarization (Text)</option>
+                <option value="translation_en_to_fr">Translation (EN to FR)</option>
+                <option value="fill-mask">Fill-Mask (Text with [MASK])</option>
+                <option value="question-answering">Question Answering (Text)</option>
+            </optgroup>
+            <optgroup label="Vision (Images)">
+                <option value="image-classification">Image Classification (URL)</option>
+                <option value="object-detection">Object Detection (URL)</option>
+                <option value="depth-estimation">Depth Estimation (URL)</option>
+            </optgroup>
+            <optgroup label="Audio">
+                <option value="audio-classification">Audio Classification (URL)</option>
+            </optgroup>
+        </select>
+
+        <br>
+        
+        <input type="text" id="myInput" value="I love exploring new technology!" style="padding: 10px; width: 80%; margin: 10px;">
+        <br>
+        <button id="myRunButton" style="padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">
+            Run AI Task
+        </button>
+    </div>
+
+    <div id="myResultOutput" style="white-space: pre-wrap; text-align: left; background: #eee; padding: 15px; border-radius: 5px; min-height: 50px;">
+        Select a task and click run...
+    </div>
+
+    <script type="module">
+        import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4/dist/transformers.mjs';
+
+        // Object to store loaded pipelines so we don't download them twice
+        let myLoadedPipelines = {};
+
+        async function myPerformInference() {
+            const myTask = document.getElementById('myTaskSelect').value;
+            const myData = document.getElementById('myInput').value;
+            const myDisplay = document.getElementById('myResultOutput');
+
+            myDisplay.innerText = `Loading/Running ${myTask}... Please wait.`;
+
+            try {
+                // 1. Check if we already created this pipeline
+                if (!myLoadedPipelines[myTask]) {
+                    myLoadedPipelines[myTask] = await pipeline(myTask, null, {
+                        device: 'webgpu', // Try to use WebGPU for v4 speed!
+                        dtype: 'q8'
+                    });
+                }
+
+                // 2. Handle specific input needs (Question Answering needs an object)
+                let myInferenceResult;
+                if (myTask === 'question-answering') {
+                    myInferenceResult = await myLoadedPipelines[myTask](myData, "The capital of France is Paris.");
+                } else {
+                    myInferenceResult = await myLoadedPipelines[myTask](myData);
+                }
+
+                // 3. Display the raw result
+                myDisplay.innerText = JSON.stringify(myInferenceResult, null, 2);
+                
+            } catch (myError) {
+                myDisplay.innerText = `Error: ${myError.message}\n(Note: Vision/Audio tasks need a valid URL)`;
+                console.error(myError);
+            }
+        }
+
+        // Static link to the function
+        document.getElementById('myRunButton').onclick = myPerformInference;
+    </script>
+</body>
+</html>
