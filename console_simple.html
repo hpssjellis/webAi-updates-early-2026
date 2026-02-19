@@ -1,0 +1,15 @@
+<button id="myButton">Run Inference</button>
+
+<script type="module">
+import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4/dist/transformers.mjs';
+
+async function myRunInference() {
+    const myClassifier = await pipeline('sentiment-analysis');
+    const myOutput = await myClassifier('This works perfectly!');
+    console.log(myOutput);
+}
+
+// This works because both the function and the assignment 
+// live inside the same module scope.
+document.getElementById('myButton').onclick = myRunInference;
+</script>
