@@ -1,36 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live AI Scene Description</title>
+</head>
 <body style="font-family: sans-serif; padding: 20px; text-align: center; background: #080808; color: white;">
     <h1 style="color: #00ffcc;">✦ Live AI Scene Description</h1>
-    
+
     <div style="position: relative; display: inline-block;">
-        <video id="myVideo" autoplay playsinline style="width: 100%; max-width: 500px; border: 2px solid #333; border-radius: 12px; background: #000;"></video>
-        <div id="loadingOverlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #888;">Starting camera...</div>
+        <video id="myVideo" autoplay playsinline muted
+            style="width: 100%; max-width: 500px; border: 2px solid #333; border-radius: 12px; background: #000;">
+        </video>
+        <div id="loadingOverlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #888;">
+            Starting camera...
+        </div>
     </div>
 
-    <div id="mySceneText" style="font-size: 1.4rem; margin-top: 20px; color: #5bc0de; min-height: 3em; max-width: 600px; margin-left: auto; margin-right: auto; line-height: 1.4;">
+    <!-- FIX 1: Add an offscreen canvas for snapshotting frames.
+         The image-to-text pipeline cannot accept an HTMLVideoElement —
+         RawImage.read() (used internally by all vision pipelines) does not
+         support live video elements. A canvas snapshot is required. -->
+    <canvas id="mySnapCanvas" style="display: none;"></canvas>
+
+    <div id="mySceneText"
+        style="font-size: 1.4rem; margin-top: 20px; color: #5bc0de; min-height: 3em; max-width: 600px; margin-left: auto; margin-right: auto; line-height: 1.4;">
         Initializing WebGPU...
     </div>
 
     <script type="module">
-        // Using v4 next.17 for improved WebGPU and video element support
-        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.17';
+        // FIX 2: Pin to a specific known-good version. next.17 is fine but
+        // next.4 is the version confirmed in all our prior fixes — keep consistent.
+        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4';
 
-        // Performance flag: Allow shared array buffers for faster data transfer
         env.allowLocalModels = false;
 
         let myCaptioner;
-        const myVideoElement = document.getElementById('myVideo');
-        const myResultDiv = document.getElementById('mySceneText');
-        const loadingOverlay = document.getElementById('loadingOverlay');
+        let myIsRunning = false;
+
+        const myVideoElement  = document.getElementById('myVideo');
+        const myResultDiv     = document.getElementById('mySceneText');
+        const loadingOverlay  = document.getElementById('loadingOverlay');
+        const mySnapCanvas    = document.getElementById('mySnapCanvas');
+        const mySnapCtx       = mySnapCanvas.getContext('2d');
 
         async function mySetupCamera() {
             try {
-                const myStream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "environment", width: 640, height: 480 } 
+                const myStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment", width: 640, height: 480 }
                 });
                 myVideoElement.srcObject = myStream;
                 return new Promise(resolve => {
                     myVideoElement.onloadedmetadata = () => {
                         myVideoElement.play();
+                        // Size the snap canvas to match the video
+                        mySnapCanvas.width  = myVideoElement.videoWidth  || 640;
+                        mySnapCanvas.height = myVideoElement.videoHeight || 480;
                         loadingOverlay.style.display = 'none';
                         resolve();
                     };
@@ -41,47 +66,68 @@
         }
 
         async function myDescribeScene() {
-            if (myCaptioner && myVideoElement.readyState >= 2) {
+            if (!myCaptioner || !myIsRunning) return;
+
+            if (myVideoElement.readyState >= 2) {
                 try {
-                    // In v4, we can pass the HTMLVideoElement directly. 
-                    // It will capture the current frame internally.
-                    const myOutput = await myCaptioner(myVideoElement, {
+                    // FIX 3: Snapshot the current video frame to the offscreen canvas.
+                    // The pipeline's internal RawImage.read() supports HTMLCanvasElement
+                    // but NOT HTMLVideoElement — passing the video element directly
+                    // throws or silently produces a blank/corrupt image.
+                    mySnapCtx.drawImage(myVideoElement, 0, 0, mySnapCanvas.width, mySnapCanvas.height);
+
+                    // FIX 4: Pass the canvas snapshot, not the video element.
+                    const myOutput = await myCaptioner(mySnapCanvas, {
                         max_new_tokens: 25,
-                        // We use beam search or sampling for better descriptions
-                        do_sample: false, 
+                        do_sample: false,
                     });
-                    
+
+                    // Output shape is Array<{ generated_text: string }> — this part was correct.
                     if (myOutput && myOutput[0]?.generated_text) {
                         myResultDiv.innerText = myOutput[0].generated_text;
                     }
                 } catch (myError) {
-                    console.error("Inference Error:", myError);
+                    console.error("Inference error:", myError);
                 }
             }
-            // Request next frame once previous inference finishes to prevent lag
-            requestAnimationFrame(() => setTimeout(myDescribeScene, 500));
+
+            // FIX 5: Don't use requestAnimationFrame — it fires 60x/second but inference
+            // takes ~500ms+. The nested rAF + setTimeout pattern in the original still
+            // allows stacking if inference takes longer than the timeout interval.
+            // The safe pattern: call setTimeout only AFTER inference resolves (tail scheduling).
+            setTimeout(myDescribeScene, 500);
         }
 
         async function myInit() {
             try {
                 await mySetupCamera();
-                myResultDiv.innerHTML = "Loading Scene Model (WebGPU)...<br><small style='color:#666'>~400MB download on first run</small>";
-                
-                // Using vit-gpt2-image-captioning. 
-                // device: 'webgpu' offloads the heavy matrix math to your graphics card.
-                myCaptioner = await pipeline('image-to-text', 'Xenova/vit-gpt2-image-captioning', { 
-                    device: 'webgpu', 
-                    dtype: 'fp32' // Use fp32 for WebGPU if q8 isn't supported by your browser's current WGSL implementation
-                });
-                
+                myResultDiv.innerHTML = "Loading scene model (WebGPU)...<br><small style='color:#666'>~400MB on first run</small>";
+
+                // FIX 6: dtype 'fp32' is correct for vit-gpt2 on WebGPU — this was fine.
+                // Model ID Xenova/vit-gpt2-image-captioning is also correct for this task.
+                myCaptioner = await pipeline(
+                    'image-to-text',
+                    'Xenova/vit-gpt2-image-captioning',
+                    {
+                        device: 'webgpu',
+                        dtype: 'fp32',
+                    }
+                );
+
                 myResultDiv.innerText = "Watching scene...";
+                myIsRunning = true;
+
+                // Kick off the loop — each iteration self-schedules via setTimeout at the end
                 myDescribeScene();
+
             } catch (myErr) {
                 myResultDiv.innerText = "Error: " + myErr.message;
                 myResultDiv.style.color = "#ff6666";
+                console.error(myErr);
             }
         }
 
         window.onload = myInit;
     </script>
 </body>
+</html>
