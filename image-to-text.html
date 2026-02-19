@@ -6,26 +6,17 @@
     <style>
         body { background: #080808; color: #e8e8e8; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
         .myCard { background: #101010; border: 1px solid #222; border-radius: 12px; padding: 25px; width: 100%; max-width: 650px; }
-        
-        /* UI Sections */
         .section { margin-top: 20px; padding-top: 20px; border-top: 1px solid #222; }
         #myOutputCanvas { width: 100%; border-radius: 8px; margin-top: 15px; display: none; background: #000; border: 1px solid #333; }
-        
-        /* Buttons & Inputs */
         .myBtn { width: 100%; padding: 12px; margin-top: 10px; cursor: pointer; border-radius: 6px; font-weight: bold; transition: background 0.2s; }
         .myBtn:disabled { opacity: 0.5; cursor: not-allowed; }
         .load-btn { background: transparent; border: 1px solid #00ffcc; color: #00ffcc; }
         .gen-btn { background: #00ffcc; border: none; color: #000; }
         .analyze-btn { background: #ff0077; border: none; color: #fff; }
-        
         textarea, input[type="text"] { width: 100%; background: #000; color: #fff; border: 1px solid #333; padding: 10px; box-sizing: border-box; border-radius: 6px; resize: none; }
-        
         #myStatus { font-size: 0.8rem; color: #888; margin-top: 15px; font-family: monospace; text-align: center; }
-        
-        /* Progress Bar */
         #progressWrap { height: 6px; background: #222; margin-top: 15px; display: none; border-radius: 3px; overflow: hidden; }
         #progressBar { height: 100%; background: #00ffcc; width: 0%; transition: width 0.1s; }
-        
         .result-box { background: #050505; border: 1px dashed #444; padding: 15px; margin-top: 15px; border-radius: 8px; font-size: 0.9rem; line-height: 1.4; }
     </style>
 </head>
@@ -33,14 +24,14 @@
 
     <div class="myCard">
         <h2 style="color: #00ffcc; margin-top: 0; text-align: center;">✦ Janus-Pro v4 Local Hub</h2>
-        
+
         <div id="loadSection">
             <p style="font-size: 0.8rem; color: #666; text-align: center;">Requires WebGPU. Downloads ~1GB of model weights.</p>
             <button class="myBtn load-btn" id="initBtn">⚡ Initialize Model (WebGPU)</button>
         </div>
 
         <div id="mainUI" style="display: none;">
-            
+
             <div class="section">
                 <h3 style="color: #00ffcc; margin-bottom: 10px;">🎨 Text-to-Image</h3>
                 <textarea id="promptInput" placeholder="A futuristic cyberpunk city in the rain, oil painting style..."></textarea>
@@ -68,11 +59,11 @@
     </div>
 
     <script type="module">
-        import { 
-            AutoProcessor, 
-            MultiModalityCausalLM, 
-            RawImage, 
-            env 
+        import {
+            AutoProcessor,
+            MultiModalityCausalLM,
+            RawImage,
+            env
         } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
 
         env.allowLocalModels = false;
@@ -80,55 +71,73 @@
         let model = null;
         let processor = null;
 
-        // DOM Elements
-        const initBtn = document.getElementById('initBtn');
-        const mainUI = document.getElementById('mainUI');
+        const initBtn    = document.getElementById('initBtn');
+        const mainUI     = document.getElementById('mainUI');
         const loadSection = document.getElementById('loadSection');
-        const statusMsg = document.getElementById('myStatus');
-        const progressBar = document.getElementById('progressBar');
+        const statusMsg  = document.getElementById('myStatus');
+        const progressBar  = document.getElementById('progressBar');
         const progressWrap = document.getElementById('progressWrap');
-        
+
         const promptInput = document.getElementById('promptInput');
-        const genBtn = document.getElementById('genBtn');
-        const myCanvas = document.getElementById('myOutputCanvas');
+        const genBtn      = document.getElementById('genBtn');
+        const myCanvas    = document.getElementById('myOutputCanvas');
 
-        const fileInput = document.getElementById('fileInput');
-        const queryInput = document.getElementById('queryInput');
-        const analyzeBtn = document.getElementById('analyzeBtn');
-        const resultBox = document.getElementById('resultBox');
-        const resultText = document.getElementById('resultText');
+        const fileInput   = document.getElementById('fileInput');
+        const queryInput  = document.getElementById('queryInput');
+        const analyzeBtn  = document.getElementById('analyzeBtn');
+        const resultBox   = document.getElementById('resultBox');
+        const resultText  = document.getElementById('resultText');
 
-        // --- 1. INITIALIZE MODEL ---
+
+        // ─── 1. INITIALIZE MODEL ─────────────────────────────────────────────
+
         initBtn.onclick = async () => {
             initBtn.disabled = true;
-            statusMsg.textContent = '⏳ Loading Janus-Pro (1.3B)...';
-            
+            statusMsg.textContent = '⏳ Loading Janus-Pro (1B)...';
+
             try {
                 const MODEL_ID = "onnx-community/Janus-Pro-1B-ONNX";
-                
+
                 processor = await AutoProcessor.from_pretrained(MODEL_ID);
+
+                // FIX 1: device must be a per-submodel map, NOT a single string "webgpu".
+                // prepare_inputs_embeds has a known WebGPU operator bug — it MUST stay on wasm.
+                // Every other submodel can use webgpu for full GPU acceleration.
                 model = await MultiModalityCausalLM.from_pretrained(MODEL_ID, {
-                    device: 'webgpu',
+                    device: {
+                        prepare_inputs_embeds: "wasm",
+                        language_model:        "webgpu",
+                        lm_head:               "webgpu",
+                        gen_head:              "webgpu",
+                        gen_img_embeds:        "webgpu",
+                        image_decode:          "webgpu",
+                    },
                     dtype: {
-                        prepare_inputs_embeds: 'q4',
-                        language_model: 'q4',
-                        lm_head: 'fp16',
-                        gen_head: 'fp16',
-                        gen_img_embeds: 'fp16',
-                        image_decode: 'fp32',
+                        // FIX 2: prepare_inputs_embeds is on wasm so it uses fp32 (wasm-safe).
+                        // q4 on wasm would silently degrade; fp32 is the correct choice here.
+                        prepare_inputs_embeds: "fp32",
+                        language_model:        "q4",
+                        lm_head:               "fp16",
+                        gen_head:              "fp16",
+                        gen_img_embeds:        "fp16",
+                        image_decode:          "fp32",   // fp32 essential for decode quality
                     }
                 });
 
                 statusMsg.textContent = '🟢 WebGPU Active & Model Ready';
                 loadSection.style.display = 'none';
                 mainUI.style.display = 'block';
+
             } catch (err) {
                 statusMsg.textContent = '❌ Load failed: ' + err.message;
+                console.error(err);
                 initBtn.disabled = false;
             }
         };
 
-        // --- 2. TEXT TO IMAGE GENERATION ---
+
+        // ─── 2. TEXT-TO-IMAGE GENERATION ─────────────────────────────────────
+
         genBtn.onclick = async () => {
             const prompt = promptInput.value.trim();
             if (!prompt) return alert("Please enter a prompt");
@@ -137,35 +146,48 @@
             myCanvas.style.display = 'none';
             resultBox.style.display = 'none';
             progressWrap.style.display = 'block';
-            statusMsg.textContent = '🎨 Drawing (Generating 576 tokens)...';
+            progressBar.style.width = "0%";
+
+            // FIX 3: Use processor.num_image_tokens instead of the magic number 576.
+            // This is the correct property exposed by the processor and works for all variants.
+            const numImageTokens = processor.num_image_tokens;
+            statusMsg.textContent = `🎨 Drawing (generating ${numImageTokens} image tokens)...`;
 
             try {
-                const conversation = [{ role: 'user', content: prompt }];
-                const inputs = await processor(conversation, { chat_template: 'text_to_image' });
-                
-                const numImageTokens = 576; 
-                const promptLen = inputs.input_ids.dims.at(-1);
+                // FIX 4: role must be "User" (capital U) — Janus uses its own chat format,
+                // not ChatML. Lowercase "user" produces malformed prompts and garbage output.
+                const conversation = [{ role: "User", content: prompt }];
+                const inputs = await processor(conversation, { chat_template: "text_to_image" });
 
-                const output = await model.generate({
+                // FIX 5: Use model.generate_images() — NOT model.generate() — for T2I.
+                // generate() is for text output (image understanding). generate_images()
+                // handles the full image generation pipeline and returns RawImage objects.
+                // The old code's manual output slicing + model.decode_image() do not exist.
+                const outputs = await model.generate_images({
                     ...inputs,
+                    min_new_tokens: numImageTokens,
                     max_new_tokens: numImageTokens,
                     do_sample: true,
                     temperature: 1.0,
-                    callback_function: (outputs) => {
-                        const current = outputs[0].output_ids.length - promptLen;
-                        progressBar.style.width = ((current / numImageTokens) * 100) + "%";
+                    // FIX 6: callback_function receives the flat output_ids array per step,
+                    // NOT an object with .output_ids — correct the progress calculation.
+                    callback_function: (output_ids) => {
+                        const promptLen = inputs.input_ids.dims.at(-1);
+                        const current = output_ids[0].length - promptLen;
+                        progressBar.style.width = Math.min((current / numImageTokens) * 100, 100) + "%";
                     }
                 });
 
-                statusMsg.textContent = '✨ Reconstruction...';
-                const imageTokens = output.slice(null, [promptLen, null]);
-                const decodedImage = await model.decode_image(imageTokens);
+                statusMsg.textContent = '✨ Rendering image...';
 
-                await decodedImage.toCanvas(myCanvas);
+                // generate_images() returns an array of RawImage objects — render index 0.
+                await outputs[0].toCanvas(myCanvas);
                 myCanvas.style.display = 'block';
                 statusMsg.textContent = '✅ Generation Complete';
+
             } catch (err) {
                 statusMsg.textContent = '❌ Gen Error: ' + err.message;
+                console.error(err);
             } finally {
                 genBtn.disabled = false;
                 progressWrap.style.display = 'none';
@@ -173,33 +195,45 @@
             }
         };
 
-        // --- 3. IMAGE UNDERSTANDING ---
+
+        // ─── 3. IMAGE UNDERSTANDING ───────────────────────────────────────────
+
         analyzeBtn.onclick = async () => {
             const file = fileInput.files[0];
             if (!file) return alert("Please upload an image first");
 
             analyzeBtn.disabled = true;
             resultBox.style.display = 'none';
-            statusMsg.textContent = '⏳ Analyzing pixels...';
+            statusMsg.textContent = '⏳ Analyzing image...';
 
             try {
+                // Load the user's image file into a RawImage via blob URL.
                 const blobURL = URL.createObjectURL(file);
                 const image = await RawImage.fromURL(blobURL);
                 URL.revokeObjectURL(blobURL);
 
+                // FIX 7: role must be "User" (capital U), same as T2I.
+                // FIX 8: The images array must contain the RawImage object, not a URL string.
+                //        The processor accepts RawImage instances directly here.
+                // FIX 9: Remove the bogus role '<|User|>' — that is raw template markup, not
+                //        a role name. The processor applies the template; the role is just "User".
                 const conversation = [{
-                    role: '<|User|>',
-                    content: '<image_placeholder>\n' + (queryInput.value || "Describe this image in detail."),
+                    role: "User",
+                    content: "<image_placeholder>\n" + (queryInput.value.trim() || "Describe this image in detail."),
                     images: [image],
                 }];
 
+                // No chat_template option needed for image understanding — it's the default.
                 const inputs = await processor(conversation);
+
+                // model.generate() is correct here — this IS the text-output path.
                 const output_ids = await model.generate({
                     ...inputs,
-                    max_new_tokens: 128,
+                    max_new_tokens: 256,
                     do_sample: false,
                 });
 
+                // Slice off the prompt tokens to get only the newly generated text tokens.
                 const promptLen = inputs.input_ids.dims.at(-1);
                 const newTokens = output_ids.slice(null, [promptLen, null]);
                 const decoded = processor.batch_decode(newTokens, { skip_special_tokens: true });
@@ -207,8 +241,10 @@
                 resultText.textContent = decoded[0].trim();
                 resultBox.style.display = 'block';
                 statusMsg.textContent = '✅ Analysis Complete';
+
             } catch (err) {
                 statusMsg.textContent = '❌ Analysis Error: ' + err.message;
+                console.error(err);
             } finally {
                 analyzeBtn.disabled = false;
             }
