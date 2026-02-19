@@ -1,98 +1,62 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>AI Scene Describer</title>
-</head>
-<body style="background: #111; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px;">
-
-    <h2 style="color: #00ffcc;">👁️ Live Scene Describer</h2>
-
-    <div style="position: relative; width: 480px; height: 360px; background: #000; border: 2px solid #333; border-radius: 8px; overflow: hidden;">
-        <video id="myCam" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover;"></video>
-        <div id="myCaptionOverlay" style="position: absolute; bottom: 0; width: 100%; background: rgba(0,0,0,0.7); padding: 15px; box-sizing: border-box; color: #00ffcc; font-weight: bold; text-align: center; font-size: 1.1rem;">
-            Ready to describe...
-        </div>
+<body style="font-family: sans-serif; padding: 20px; text-align: center; background: #111; color: white;">
+    <h1>Live Scene Description</h1>
+    <video id="myVideo" autoplay playsinline style="width: 100%; max-width: 500px; border: 2px solid #444; border-radius: 8px;"></video>
+    <div id="mySceneText" style="font-size: 1.2rem; margin-top: 20px; color: #5bc0de; min-height: 3em;">
+        Initializing scene analyzer...
     </div>
-
-    <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 10px; align-items: center;">
-        <button id="myStartBtn" style="padding: 10px 25px; background: #00ffcc; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: #111;">▶ Start AI Vision</button>
-        <div id="myStatus" style="font-family: monospace; font-size: 0.8rem; color: #888;">WebGPU is recommended for live speed.</div>
-    </div>
-
-    <canvas id="mySnap" width="384" height="384" style="display: none;"></canvas>
 
     <script type="module">
-        import { pipeline, RawImage } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
+        import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4';
 
-        let myCaptioner = null;
-        let myIsRunning = false;
-        
-        const myCam = document.getElementById("myCam");
-        const mySnap = document.getElementById("mySnap");
-        const mySnapCtx = mySnap.getContext("2d", { willReadFrequently: true });
-        const myStatus = document.getElementById("myStatus");
-        const myDisplay = document.getElementById("myCaptionOverlay");
+        let myCaptioner;
+        const myVideoElement = document.getElementById('myVideo');
+        const myResultDiv = document.getElementById('mySceneText');
 
-        // 1. Camera Access
-        async function myStartCamera() {
-            const myStream = await navigator.mediaDevices.getUserMedia({
-                video: { width: 480, height: 360, facingMode: "environment" }
+        async function mySetupCamera() {
+            const myStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            myVideoElement.srcObject = myStream;
+            return new Promise(resolve => myVideoElement.onloadedmetadata = () => {
+                myVideoElement.play();
+                resolve();
             });
-            myCam.srcObject = myStream;
-            return new Promise(resolve => myCam.onloadedmetadata = resolve);
         }
 
-        // 2. Continuous Inference Loop
-        async function myInferenceLoop() {
-            if (!myIsRunning || !myCaptioner) return;
-
-            // Draw current video frame to hidden canvas for processing
-            mySnapCtx.drawImage(myCam, 0, 0, mySnap.width, mySnap.height);
-            
-            try {
-                const myFrame = await RawImage.fromCanvas(mySnap);
-                
-                // Generate the text description
-                const myOutput = await myCaptioner(myFrame, { max_new_tokens: 20 });
-                const myText = myOutput[0].generated_text;
-                
-                myDisplay.innerText = myText.charAt(0).toUpperCase() + myText.slice(1);
-            } catch (myErr) {
-                console.error("AI Error:", myErr);
+        async function myDescribeScene() {
+            if (myCaptioner) {
+                try {
+                    // We pass the video element to the image-to-text pipeline
+                    const myOutput = await myCaptioner(myVideoElement);
+                    
+                    if (myOutput && myOutput[0]) {
+                        myResultDiv.innerText = myOutput[0].generated_text;
+                    }
+                } catch (myError) {
+                    console.error("Captioning error:", myError);
+                }
             }
-
-            // Loop immediately for "continuous" feel
-            requestAnimationFrame(myInferenceLoop);
+            // Scene description is heavier than YOLO, so we wait 1 second between updates
+            setTimeout(myDescribeScene, 1000);
         }
 
-        // 3. Setup and Start
-        async function myStartApp() {
-            const myBtn = document.getElementById("myStartBtn");
-            myBtn.disabled = true;
-            myStatus.innerText = "⏳ Loading BLIP Model (approx 100MB)...";
-
+        async function myInit() {
             try {
-                await myStartCamera();
-
-                // Initialize the pipeline with WebGPU
-                myCaptioner = await pipeline("image-to-text", "Xenova/blip-image-captioning-base", {
-                    device: "webgpu", 
-                    dtype: "q8" // Quantized for speed
+                await mySetupCamera();
+                myResultDiv.innerText = "Loading Scene Model (WebGPU)...";
+                
+                // Using vit-gpt2 for fast browser-based captioning
+                myCaptioner = await pipeline('image-to-text', 'Xenova/vit-gpt2-image-captioning', { 
+                    device: 'webgpu', 
+                    dtype: 'q8' 
                 });
-
-                myStatus.innerText = "🟢 Running Live with WebGPU";
-                myBtn.style.display = "none";
-                myIsRunning = true;
-                myInferenceLoop();
+                
+                myResultDiv.innerText = "Watching scene...";
+                myDescribeScene();
             } catch (myErr) {
-                myStatus.innerText = "❌ Error: " + myErr.message;
-                myBtn.disabled = false;
+                myResultDiv.innerText = "Error: " + myErr.message;
             }
         }
 
-        // Static link to function name
-        document.getElementById("myStartBtn").onclick = myStartApp;
+        // Static link to start
+        window.onload = myInit;
     </script>
 </body>
-</html>
