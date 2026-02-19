@@ -37,108 +37,103 @@
         <div id="myStatus">Ready to load.</div>
     </div>
 
-    <script type="module">
-        // Import version 4 specific components
-        import { AutoProcessor, MultiModalityCausalLM, RawImage, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
+import { AutoProcessor, MultiModalityCausalLM, RawImage, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.17";
 
-        // Enable WebGPU specifically
-        env.allowLocalModels = false;
+// Enable WebGPU specifically
+env.allowLocalModels = false;
 
-        let myModel = null;
-        let myProcessor = null;
-        const myStatus = document.getElementById('myStatus');
-        const myCanvas = document.getElementById('myOutputCanvas');
+let myModel = null;
+let myProcessor = null;
+const myStatus = document.getElementById('myStatus');
+const myCanvas = document.getElementById('myOutputCanvas');
 
-        window.myInitModel = async function() {
-            const myBtn = document.getElementById('myLoadBtn');
-            myBtn.disabled = true;
-            myStatus.innerText = "⏳ Checking WebGPU & Downloading (this may take a minute)...";
+window.myInitModel = async function() {
+    const myBtn = document.getElementById('myLoadBtn');
+    myBtn.disabled = true;
+    myStatus.innerText = "⏳ Initializing WebGPU & Loading Model...";
 
-            try {
-                const myModelId = "onnx-community/Janus-Pro-1B-ONNX";
+    try {
+        const myModelId = "onnx-community/Janus-Pro-1B-ONNX";
 
-                myProcessor = await AutoProcessor.from_pretrained(myModelId);
-                
-                myModel = await MultiModalityCausalLM.from_pretrained(myModelId, {
-                    device: 'webgpu',
-                    dtype: {
-                        prepare_inputs_embeds: 'q4',
-                        language_model: 'q4',
-                        lm_head: 'fp16',
-                        gen_head: 'fp16',
-                        gen_img_embeds: 'fp16',
-                        image_decode: 'fp32',
-                    }
-                });
-
-                myStatus.innerText = "🟢 Model Ready!";
-                document.getElementById('myLoadSection').style.display = 'none';
-                document.getElementById('myGenSection').style.display = 'block';
-            } catch (myErr) {
-                console.error(myErr);
-                myStatus.innerText = "❌ Error: " + myErr.message;
-                myBtn.disabled = false;
+        // Load processor and model
+        myProcessor = await AutoProcessor.from_pretrained(myModelId);
+        myModel = await MultiModalityCausalLM.from_pretrained(myModelId, {
+            device: 'webgpu',
+            dtype: {
+                prepare_inputs_embeds: 'q4',
+                language_model: 'q4',
+                lm_head: 'fp16',
+                gen_head: 'fp16',
+                gen_img_embeds: 'fp16',
+                image_decode: 'fp32', // Essential for decoding quality
             }
-        };
+        });
 
-        window.myGenerateImage = async function() {
-            const myPrompt = document.getElementById('myPromptInput').value;
-            const myGenBtn = document.getElementById('myGenBtn');
-            const myBar = document.getElementById('myTokenBar');
-            const myWrap = document.getElementById('myTokenProgress');
+        myStatus.innerText = "🟢 Model Ready!";
+        document.getElementById('myLoadSection').style.display = 'none';
+        document.getElementById('myGenSection').style.display = 'block';
+    } catch (myErr) {
+        console.error(myErr);
+        myStatus.innerText = "❌ Error: " + myErr.message;
+        myBtn.disabled = false;
+    }
+};
 
-            if (!myPrompt) return alert("Please enter a prompt");
+window.myGenerateImage = async function() {
+    const myPrompt = document.getElementById('myPromptInput').value;
+    const myGenBtn = document.getElementById('myGenBtn');
+    const myBar = document.getElementById('myTokenBar');
+    const myWrap = document.getElementById('myTokenProgress');
 
-            myGenBtn.disabled = true;
-            myCanvas.style.display = 'none';
-            myStatus.innerText = "🎨 Generating 576 tokens...";
-            myWrap.style.display = 'block';
-            myBar.style.width = "0%";
+    if (!myPrompt) return alert("Please enter a prompt");
 
-            try {
-                // Formatting prompt for Janus-Pro T2I
-                const myMessages = [{ role: 'user', content: myPrompt }];
-                const myInputs = await myProcessor(myMessages, { chat_template: 'text_to_image' });
-                
-                // Janus-Pro uses a fixed 24x24 grid (576 tokens)
-                const myNumTokens = 576; 
+    myGenBtn.disabled = true;
+    myCanvas.style.display = 'none';
+    myStatus.innerText = "🎨 Generating 576 tokens...";
+    myWrap.style.display = 'block';
+    myBar.style.width = "0%";
 
-                const myOutput = await myModel.generate({
-                    ...myInputs,
-                    max_new_tokens: myNumTokens,
-                    do_sample: true,
-                    temperature: 1.0,
-                    callback_function: (myGeneration) => {
-                        // Correctly calculate progress based on generated IDs
-                        const currentTokens = myGeneration[0].output_ids.length - myInputs.input_ids.dims.at(-1);
-                        const myPct = Math.min((currentTokens / myNumTokens) * 100, 100);
-                        myBar.style.width = myPct + "%";
-                    }
-                });
+    try {
+        // Janus-Pro uses specific chat markers for T2I
+        const myMessages = [{ role: 'user', content: myPrompt }];
+        const myInputs = await myProcessor(myMessages, { chat_template: 'text_to_image' });
+        
+        const myNumTokens = 576; // 24x24 grid
+        const promptLen = myInputs.input_ids.dims.at(-1);
 
-                myStatus.innerText = "✨ Reconstruction in progress...";
-
-                // Extract only the generated image tokens
-                const myPromptLen = myInputs.input_ids.dims.at(-1);
-                const myImageTokens = myOutput.slice(null, [myPromptLen, null]);
-
-                // Decode tokens into pixel data
-                const myDecoded = await myProcessor.decode_image(myImageTokens);
-
-                // Use RawImage.toCanvas for reliable cross-browser rendering
-                const rawImage = new RawImage(myDecoded.data, myDecoded.width, myDecoded.height, 3);
-                await rawImage.toCanvas(myCanvas);
-                
-                myCanvas.style.display = 'block';
-                myStatus.innerText = "✅ Done!";
-            } catch (myErr) {
-                console.error(myErr);
-                myStatus.innerText = "❌ Gen Error: " + myErr.message;
-            } finally {
-                myGenBtn.disabled = false;
-                myWrap.style.display = 'none';
+        const myOutput = await myModel.generate({
+            ...myInputs,
+            max_new_tokens: myNumTokens,
+            do_sample: true,
+            temperature: 1.0,
+            callback_function: (outputs) => {
+                const currentTokens = outputs[0].output_ids.length - promptLen;
+                const myPct = Math.min((currentTokens / myNumTokens) * 100, 100);
+                myBar.style.width = myPct + "%";
             }
-        };
-    </script>
+        });
+
+        myStatus.innerText = "✨ Reconstruction in progress...";
+
+        // Slice the output to get only the new image tokens
+        const imageTokens = myOutput.slice(null, [promptLen, null]);
+
+        // Decode tokens to image
+        // In v4, we pass the tokens directly to decode_image
+        const decodedImage = await myModel.decode_image(imageTokens);
+
+        // Render to canvas
+        await decodedImage.toCanvas(myCanvas);
+        
+        myCanvas.style.display = 'block';
+        myStatus.innerText = "✅ Done!";
+    } catch (myErr) {
+        console.error(myErr);
+        myStatus.innerText = "❌ Gen Error: " + myErr.message;
+    } finally {
+        myGenBtn.disabled = false;
+        myWrap.style.display = 'none';
+    }
+};
 </body>
 </html>
