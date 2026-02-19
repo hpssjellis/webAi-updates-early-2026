@@ -2,728 +2,140 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Janus-Pro | Text-to-Image</title>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --accent: #00ffcc;
-            --accent2: #ff006e;
-            --bg: #080808;
-            --panel: #101010;
-            --border: #222;
-            --text: #e8e8e8;
-            --muted: #555;
-        }
-
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-
-        body {
-            background: var(--bg);
-            color: var(--text);
-            font-family: 'Syne', sans-serif;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 40px 20px 60px;
-            background-image:
-                radial-gradient(ellipse 60% 40% at 20% 10%, rgba(0,255,204,0.05) 0%, transparent 70%),
-                radial-gradient(ellipse 40% 30% at 80% 80%, rgba(255,0,110,0.05) 0%, transparent 70%);
-        }
-
-        header { text-align: center; margin-bottom: 36px; }
-
-        header h1 {
-            font-size: clamp(2rem, 5vw, 3.2rem);
-            font-weight: 800;
-            letter-spacing: -1px;
-            background: linear-gradient(135deg, var(--accent) 0%, #00b8ff 50%, var(--accent2) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        header p {
-            font-family: 'Space Mono', monospace;
-            font-size: 0.72rem;
-            color: var(--muted);
-            margin-top: 6px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
-
-        .card {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 28px;
-            width: 100%;
-            max-width: 640px;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .card::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 1px;
-            background: linear-gradient(90deg, transparent, var(--accent), transparent);
-            opacity: 0.5;
-        }
-
-        /* ── DEVICE TOGGLE ───────────────────────────────────────────────────── */
-        .device-row {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 14px;
-            align-items: center;
-        }
-
-        .device-row label {
-            font-family: 'Space Mono', monospace;
-            font-size: 0.72rem;
-            color: var(--muted);
-        }
-
-        .device-btn {
-            padding: 5px 12px;
-            background: transparent;
-            border: 1px solid var(--border);
-            color: var(--muted);
-            border-radius: 4px;
-            cursor: pointer;
-            font-family: 'Space Mono', monospace;
-            font-size: 0.7rem;
-            transition: all 0.15s;
-        }
-
-        .device-btn.active { border-color: var(--accent); color: var(--accent); }
-        .device-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-        /* ── LOAD BUTTON ─────────────────────────────────────────────────────── */
-        #initBtn {
-            width: 100%;
-            padding: 14px;
-            background: transparent;
-            border: 1px solid var(--accent);
-            color: var(--accent);
-            border-radius: 8px;
-            font-family: 'Space Mono', monospace;
-            font-size: 0.9rem;
-            font-weight: 700;
-            cursor: pointer;
-            letter-spacing: 1px;
-            transition: all 0.2s;
-            position: relative;
-            overflow: hidden;
-        }
-
-        #initBtn::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: var(--accent);
-            transform: translateX(-100%);
-            transition: transform 0.3s ease;
-            z-index: 0;
-        }
-
-        #initBtn:hover::before { transform: translateX(0); }
-        #initBtn:hover { color: #000; }
-        #initBtn span { position: relative; z-index: 1; }
-        #initBtn:disabled { opacity: 0.4; cursor: not-allowed; }
-        #initBtn:disabled::before { display: none; }
-
-        /* ── UI BODY ─────────────────────────────────────────────────────────── */
-        #uiBody { display: none; margin-top: 24px; }
-
-        .prompt-label {
-            font-family: 'Space Mono', monospace;
-            font-size: 0.65rem;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            color: var(--accent);
-            margin-bottom: 8px;
-        }
-
-        #promptInput {
-            width: 100%;
-            padding: 12px 14px;
-            background: #000;
-            border: 1px solid var(--border);
-            color: var(--text);
-            border-radius: 8px;
-            font-family: 'Syne', sans-serif;
-            font-size: 0.9rem;
-            outline: none;
-            resize: vertical;
-            min-height: 80px;
-            transition: border-color 0.2s;
-            line-height: 1.5;
-        }
-
-        #promptInput:focus { border-color: var(--accent); }
-        #promptInput::placeholder { color: var(--muted); }
-
-        /* ── SETTINGS ROW ────────────────────────────────────────────────────── */
-        .settings-row {
-            display: flex;
-            gap: 12px;
-            margin-top: 12px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .setting-group {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            flex: 1;
-            min-width: 100px;
-        }
-
-        .setting-group label {
-            font-family: 'Space Mono', monospace;
-            font-size: 0.62rem;
-            color: var(--muted);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .setting-group input[type="number"],
-        .setting-group select {
-            padding: 7px 10px;
-            background: #000;
-            border: 1px solid var(--border);
-            color: var(--text);
-            border-radius: 6px;
-            font-family: 'Space Mono', monospace;
-            font-size: 0.75rem;
-            outline: none;
-            transition: border-color 0.2s;
-            width: 100%;
-        }
-
-        .setting-group input:focus,
-        .setting-group select:focus { border-color: var(--accent); }
-
-        #generateBtn {
-            margin-top: 14px;
-            width: 100%;
-            padding: 12px;
-            background: var(--accent);
-            color: #000;
-            border: none;
-            border-radius: 8px;
-            font-family: 'Space Mono', monospace;
-            font-size: 0.85rem;
-            font-weight: 700;
-            cursor: pointer;
-            letter-spacing: 1px;
-            transition: opacity 0.2s, transform 0.1s;
-        }
-
-        #generateBtn:hover { opacity: 0.85; }
-        #generateBtn:active { transform: scale(0.98); }
-        #generateBtn:disabled { opacity: 0.35; cursor: not-allowed; }
-
-        /* ── OUTPUT ──────────────────────────────────────────────────────────── */
-        #outputBox {
-            margin-top: 20px;
-            display: none;
-        }
-
-        #outputBox .out-label {
-            font-family: 'Space Mono', monospace;
-            font-size: 0.65rem;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            color: var(--accent);
-            margin-bottom: 10px;
-        }
-
-        #outputCanvas {
-            display: block;
-            width: 100%;
-            border-radius: 10px;
-            border: 1px solid var(--border);
-            background: #000;
-            image-rendering: pixelated;
-        }
-
-        .output-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 10px;
-        }
-
-        .action-btn {
-            flex: 1;
-            padding: 8px;
-            background: transparent;
-            border: 1px solid var(--border);
-            color: var(--muted);
-            border-radius: 6px;
-            cursor: pointer;
-            font-family: 'Space Mono', monospace;
-            font-size: 0.7rem;
-            transition: all 0.15s;
-        }
-
-        .action-btn:hover { border-color: var(--accent); color: var(--accent); }
-
-        /* ── STATUS ──────────────────────────────────────────────────────────── */
-        .status-bar {
-            margin-top: 16px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        #spinner {
-            display: none;
-            width: 14px; height: 14px;
-            border: 2px solid var(--border);
-            border-top-color: var(--accent);
-            border-radius: 50%;
-            animation: spin 0.7s linear infinite;
-            flex-shrink: 0;
-        }
-
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        #statusMsg {
-            font-family: 'Space Mono', monospace;
-            font-size: 0.72rem;
-            color: var(--muted);
-            flex: 1;
-        }
-
-        #statusMsg.error   { color: var(--accent2); }
-        #statusMsg.success { color: var(--accent); }
-
-        /* ── PROGRESS BAR ────────────────────────────────────────────────────── */
-        #progressWrap {
-            display: none;
-            margin-top: 14px;
-            background: #000;
-            border-radius: 4px;
-            overflow: hidden;
-            height: 4px;
-        }
-
-        #progressBar {
-            height: 100%;
-            background: linear-gradient(90deg, var(--accent), #00b8ff);
-            width: 0%;
-            transition: width 0.3s ease;
-            border-radius: 4px;
-        }
-
-        /* ── COMPAT WARNING ──────────────────────────────────────────────────── */
-        #compatWarn {
-            display: none;
-            background: rgba(255,0,110,0.08);
-            border: 1px solid rgba(255,0,110,0.3);
-            border-radius: 8px;
-            padding: 12px 16px;
-            font-family: 'Space Mono', monospace;
-            font-size: 0.72rem;
-            color: #ff6699;
-            line-height: 1.6;
-            margin-bottom: 16px;
-        }
-
-        /* ── TOKEN COUNTER ───────────────────────────────────────────────────── */
-        #tokenCounter {
-            display: none;
-            margin-top: 14px;
-            background: #000;
-            border-radius: 8px;
-            padding: 10px 14px;
-            border: 1px solid var(--border);
-        }
-
-        #tokenCounter .tc-label {
-            font-family: 'Space Mono', monospace;
-            font-size: 0.62rem;
-            color: var(--muted);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 6px;
-        }
-
-        #tokenProgress {
-            background: var(--border);
-            border-radius: 3px;
-            height: 3px;
-            overflow: hidden;
-        }
-
-        #tokenProgressBar {
-            height: 100%;
-            background: linear-gradient(90deg, var(--accent2), var(--accent));
-            width: 0%;
-            transition: width 0.1s linear;
-        }
-
-        #tokenLabel {
-            font-family: 'Space Mono', monospace;
-            font-size: 0.65rem;
-            color: var(--muted);
-            margin-top: 5px;
-            text-align: right;
-        }
+        /* Keeping your custom styling but ensuring it's minimal as per your preference */
+        body { background: #080808; color: #e8e8e8; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .myCard { background: #101010; border: 1px solid #222; border-radius: 12px; padding: 25px; width: 100%; max-width: 600px; }
+        #myOutputCanvas { width: 100%; border-radius: 8px; margin-top: 15px; display: none; background: #000; }
+        .myBtn { width: 100%; padding: 12px; margin-top: 10px; cursor: pointer; border-radius: 6px; font-weight: bold; }
+        #myStatus { font-size: 0.8rem; color: #888; margin-top: 10px; font-family: monospace; }
     </style>
 </head>
 <body>
-    <header>
-        <h1>✦ Janus-Pro</h1>
-        <p>Text-to-Image · WebGPU · Runs Locally</p>
-    </header>
 
-    <div class="card">
-        <div id="compatWarn"></div>
-
-        <div class="device-row">
-            <label>Device:</label>
-            <button class="device-btn active" data-device="webgpu">WebGPU</button>
-            <button class="device-btn" data-device="wasm">WASM (CPU)</button>
+    <div class="myCard">
+        <h2 style="color: #00ffcc; margin-top: 0;">✦ Janus-Pro Local Gen</h2>
+        
+        <div id="myLoadSection">
+            <p style="font-size: 0.8rem; color: #666;">Note: Downloads ~800MB. Requires WebGPU.</p>
+            <button class="myBtn" id="myLoadBtn" onclick="window.myInitModel()" style="background: transparent; border: 1px solid #00ffcc; color: #00ffcc;">⚡ Load Model</button>
         </div>
 
-        <button id="initBtn"><span>⚡ Load Janus-Pro Model</span></button>
-
-        <div id="progressWrap"><div id="progressBar"></div></div>
-
-        <div id="uiBody">
-            <div class="prompt-label">Prompt</div>
-            <textarea id="promptInput" placeholder="A serene mountain lake at golden hour, photorealistic, cinematic lighting, 8k..."></textarea>
-
-            <div class="settings-row">
-                <div class="setting-group">
-                    <label>Temperature</label>
-                    <input type="number" id="temperature" value="1.0" min="0.1" max="2.0" step="0.1">
-                </div>
-                <div class="setting-group">
-                    <label>Top-P</label>
-                    <input type="number" id="topP" value="1.0" min="0.1" max="1.0" step="0.05">
-                </div>
-                <div class="setting-group">
-                    <label>CFG Weight</label>
-                    <input type="number" id="cfgWeight" value="5" min="1" max="10" step="0.5">
-                </div>
-            </div>
-
-            <button id="generateBtn">✦ Generate Image</button>
-
-            <div id="tokenCounter">
-                <div class="tc-label">Generating image tokens…</div>
-                <div id="tokenProgress"><div id="tokenProgressBar"></div></div>
-                <div id="tokenLabel">0 / 0</div>
-            </div>
-
-            <div id="outputBox">
-                <div class="out-label">Generated Image</div>
-                <canvas id="outputCanvas"></canvas>
-                <div class="output-actions">
-                    <button class="action-btn" id="downloadBtn">⬇ Download PNG</button>
-                    <button class="action-btn" id="regenerateBtn">↻ Regenerate</button>
-                </div>
+        <div id="myGenSection" style="display: none;">
+            <textarea id="myPromptInput" style="width: 100%; height: 80px; background: #000; color: #fff; border: 1px solid #333; padding: 10px; box-sizing: border-box;" placeholder="A cyberpunk cat in a neon city..."></textarea>
+            
+            <button class="myBtn" id="myGenBtn" onclick="window.myGenerateImage()" style="background: #00ffcc; border: none; color: #000;">✦ Generate Image</button>
+            
+            <div id="myTokenProgress" style="height: 4px; background: #222; margin-top: 10px; display: none;">
+                <div id="myTokenBar" style="height: 100%; background: #00ffcc; width: 0%;"></div>
             </div>
         </div>
 
-        <div class="status-bar">
-            <div id="spinner"></div>
-            <div id="statusMsg">Model not loaded.</div>
-        </div>
+        <canvas id="myOutputCanvas"></canvas>
+        <div id="myStatus">Waiting for user...</div>
     </div>
 
     <script type="module">
-        // ─────────────────────────────────────────────────────────────────────
-        // Transformers.js v4 — Janus-Pro TEXT-TO-IMAGE pipeline
-        //
-        // Source: github.com/huggingface/transformers.js PR #1001 (merged Nov 2024)
-        //         Official image generation example code
-        //
-        // KEY DIFFERENCES from the vision-understanding (image-to-text) mode:
-        //
-        // 1. Conversation has NO images array — text prompt only.
-        //
-        // 2. processor() MUST be called with { chat_template: "text_to_image" }
-        //    Without this second argument, the model uses the understanding
-        //    pipeline, not the generation pipeline.
-        //
-        // 3. model.generate() needs:
-        //      num_image_tokens: processor.num_image_tokens (e.g. 576 for 1B)
-        //      The output is image tokens, NOT text tokens.
-        //
-        // 4. Decode: processor.decode_image(image_tokens) → RawImage
-        //    image_tokens = output_ids.slice(null, [inputs.input_ids.dims.at(-1), null])
-        //    Then draw the RawImage data to a <canvas>.
-        // ─────────────────────────────────────────────────────────────────────
-        import {
-            AutoProcessor,
-            MultiModalityCausalLM,
-        } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
+        import { AutoProcessor, MultiModalityCausalLM, RawImage } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.17";
 
-        // DOM refs
-        const initBtn           = document.getElementById('initBtn');
-        const uiBody            = document.getElementById('uiBody');
-        const promptInput       = document.getElementById('promptInput');
-        const temperatureInput  = document.getElementById('temperature');
-        const topPInput         = document.getElementById('topP');
-        const cfgWeightInput    = document.getElementById('cfgWeight');
-        const generateBtn       = document.getElementById('generateBtn');
-        const tokenCounter      = document.getElementById('tokenCounter');
-        const tokenProgressBar  = document.getElementById('tokenProgressBar');
-        const tokenLabel        = document.getElementById('tokenLabel');
-        const outputBox         = document.getElementById('outputBox');
-        const outputCanvas      = document.getElementById('outputCanvas');
-        const downloadBtn       = document.getElementById('downloadBtn');
-        const regenerateBtn     = document.getElementById('regenerateBtn');
-        const statusMsg         = document.getElementById('statusMsg');
-        const spinner           = document.getElementById('spinner');
-        const progressWrap      = document.getElementById('progressWrap');
-        const progressBar       = document.getElementById('progressBar');
-        const compatWarn        = document.getElementById('compatWarn');
+        let myModel = null;
+        let myProcessor = null;
+        const myStatus = document.getElementById('myStatus');
+        const myCanvas = document.getElementById('myOutputCanvas');
 
-        // State
-        let model          = null;
-        let processor      = null;
-        let selectedDevice = 'webgpu';
-
-        // ── Device toggle ─────────────────────────────────────────────────────
-        document.querySelectorAll('.device-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.device-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                selectedDevice = btn.dataset.device;
-            });
-        });
-
-        // ── Helpers ───────────────────────────────────────────────────────────
-        function setStatus(msg, type = '') {
-            statusMsg.textContent = msg;
-            statusMsg.className = type;
-        }
-        function setLoading(active) {
-            spinner.style.display = active ? 'block' : 'none';
-        }
-        function setProgress(pct) {
-            if (pct === null) {
-                progressWrap.style.display = 'none';
-                progressBar.style.width = '0%';
-            } else {
-                progressWrap.style.display = 'block';
-                progressBar.style.width = Math.min(pct, 100) + '%';
-            }
-        }
-
-        // ── WebGPU check ──────────────────────────────────────────────────────
-        async function checkCompat() {
-            if (!navigator.gpu) {
-                compatWarn.innerHTML =
-                    '⚠️ WebGPU not available (Chrome 113+ / Edge 113+ required).<br>' +
-                    'Auto-switching to <strong>WASM (CPU)</strong> — slower but functional.';
-                compatWarn.style.display = 'block';
-                document.querySelectorAll('.device-btn').forEach(b => {
-                    b.classList.toggle('active', b.dataset.device === 'wasm');
-                });
-                selectedDevice = 'wasm';
-                return;
-            }
-            try {
-                const adapter = await navigator.gpu.requestAdapter();
-                if (!adapter) {
-                    compatWarn.innerHTML =
-                        '⚠️ No WebGPU adapter found. If loading fails, switch to <strong>WASM (CPU)</strong>.';
-                    compatWarn.style.display = 'block';
-                }
-            } catch (e) {
-                compatWarn.innerHTML = '⚠️ WebGPU probe error: ' + e.message;
-                compatWarn.style.display = 'block';
-            }
-        }
-        await checkCompat();
-
-        // ── Load model ────────────────────────────────────────────────────────
-        initBtn.addEventListener('click', async () => {
-            initBtn.disabled = true;
-            document.querySelectorAll('.device-btn').forEach(b => b.disabled = true);
-            setLoading(true);
-            setStatus('Initialising…');
-            setProgress(0);
-
-            const MODEL_ID = "onnx-community/Janus-Pro-1B-ONNX";
-
-            const progressCallback = (info) => {
-                if (info.status === 'progress' && info.total) {
-                    const pct   = (info.loaded / info.total) * 100;
-                    const mb    = (info.loaded / 1_048_576).toFixed(1);
-                    const total = (info.total  / 1_048_576).toFixed(1);
-                    setProgress(pct);
-                    setStatus(`↓ ${info.file}  ${mb} / ${total} MB`);
-                } else if (info.status === 'initiate') {
-                    setStatus(`Fetching: ${info.file}`);
-                } else if (info.status === 'done') {
-                    setStatus(`✓ ${info.file}`);
-                }
-            };
+        // 1. Initialize Model
+        window.myInitModel = async function() {
+            const myBtn = document.getElementById('myLoadBtn');
+            myBtn.disabled = true;
+            myStatus.innerText = "⏳ Initializing WebGPU & Downloading...";
 
             try {
-                processor = await AutoProcessor.from_pretrained(MODEL_ID, {
-                    progress_callback: progressCallback,
-                });
+                const myModelId = "onnx-community/Janus-Pro-1B-ONNX";
 
-                // dtype map from the official onnx-community/Janus-Pro-1B-ONNX model card.
-                // For image generation, the gen_head, gen_img_embeds and image_decode
-                // components are the active ones — keep them at fp16/fp32.
-                model = await MultiModalityCausalLM.from_pretrained(MODEL_ID, {
-                    device: selectedDevice,
+                myProcessor = await AutoProcessor.from_pretrained(myModelId);
+                
+                myModel = await MultiModalityCausalLM.from_pretrained(myModelId, {
+                    device: 'webgpu',
                     dtype: {
                         prepare_inputs_embeds: 'q4',
-                        language_model:        'q4',
-                        lm_head:               'fp16',
-                        gen_head:              'fp16',
-                        gen_img_embeds:        'fp16',
-                        image_decode:          'fp32',
-                    },
-                    progress_callback: progressCallback,
+                        language_model: 'q4',
+                        lm_head: 'fp16',
+                        gen_head: 'fp16',
+                        gen_img_embeds: 'fp16',
+                        image_decode: 'fp32',
+                    }
                 });
 
-                setProgress(100);
-                setTimeout(() => setProgress(null), 800);
-                setLoading(false);
-                setStatus(`✓ Ready on ${selectedDevice.toUpperCase()} — enter a prompt below.`, 'success');
-                initBtn.style.display = 'none';
-                uiBody.style.display = 'block';
-
-            } catch (err) {
-                console.error(err);
-                setLoading(false);
-                setProgress(null);
-                initBtn.disabled = false;
-                document.querySelectorAll('.device-btn').forEach(b => b.disabled = false);
-                const hint = selectedDevice === 'webgpu' ? ' · Try WASM (CPU) instead' : '';
-                setStatus(`✗ ${err.message}${hint}`, 'error');
+                myStatus.innerText = "🟢 Model Ready!";
+                document.getElementById('myLoadSection').style.display = 'none';
+                document.getElementById('myGenSection').style.display = 'block';
+            } catch (myErr) {
+                myStatus.innerText = "❌ Load Error: " + myErr.message;
+                myBtn.disabled = false;
             }
-        });
+        };
 
-        // ── Generate ──────────────────────────────────────────────────────────
-        async function generate() {
-            const prompt = promptInput.value.trim();
-            if (!prompt) { setStatus('⚠️ Enter a prompt first.', 'error'); return; }
-            if (!model)  { setStatus('⚠️ Model not loaded.', 'error'); return; }
+        // 2. Generate Image
+        window.myGenerateImage = async function() {
+            const myPrompt = document.getElementById('myPromptInput').value;
+            const myGenBtn = document.getElementById('myGenBtn');
+            const myBar = document.getElementById('myTokenBar');
+            const myWrap = document.getElementById('myTokenProgress');
 
-            const temperature = parseFloat(temperatureInput.value) || 1.0;
-            const top_p       = parseFloat(topPInput.value) || 1.0;
-            const cfg_weight  = parseFloat(cfgWeightInput.value) || 5.0;
+            if (!myPrompt) return alert("Please enter a prompt");
 
-            generateBtn.disabled = true;
-            setLoading(true);
-            setStatus('Preparing inputs…');
-            outputBox.style.display = 'none';
-            tokenCounter.style.display = 'none';
+            myGenBtn.disabled = true;
+            myStatus.innerText = "🎨 Generating tokens (576 required)...";
+            myWrap.style.display = 'block';
 
             try {
-                // ── 1. Build conversation (text-to-image format) ───────────────
-                // No `images` array — this is pure text-to-image generation.
-                // The chat_template: "text_to_image" flag switches the processor
-                // into generation mode instead of understanding mode.
-                const conversation = [
-                    {
-                        role: 'User',
-                        content: prompt,
-                    },
-                ];
+                // Correct template role for Janus
+                const myMessages = [{ role: 'user', content: myPrompt }];
+                
+                // Use the specific text_to_image template
+                const myInputs = await myProcessor(myMessages, { chat_template: 'text_to_image' });
+                
+                const myNumTokens = myProcessor.num_image_tokens; // Usually 576
 
-                // ── 2. Process with text_to_image chat template ───────────────
-                const inputs = await processor(conversation, {
-                    chat_template: 'text_to_image',
-                });
-
-                // ── 3. Get the expected number of image tokens ─────────────────
-                // processor.num_image_tokens tells us how many tokens the model
-                // will emit to represent the full generated image.
-                const num_image_tokens = processor.num_image_tokens;
-                const max_new_tokens = num_image_tokens;
-
-                // Show token generation progress bar
-                tokenCounter.style.display = 'block';
-                tokenProgressBar.style.width = '0%';
-                tokenLabel.textContent = `0 / ${num_image_tokens}`;
-                setStatus('Generating image tokens…');
-
-                // ── 4. Generate image tokens ───────────────────────────────────
-                // CFG (classifier-free guidance) is built into Janus's generate():
-                // pass cfg_weight to control how strongly the prompt is followed.
-                const output_ids = await model.generate({
-                    ...inputs,
-                    max_new_tokens,
+                const myOutput = await myModel.generate({
+                    ...myInputs,
+                    max_new_tokens: myNumTokens,
                     do_sample: true,
-                    temperature,
-                    top_p,
-                    cfg_weight,
-                    // Callback to update the token progress bar
-                    callback_function: (tokens) => {
-                        const generated = tokens.shape?.at(-1) ?? 0;
-                        const pct = (generated / num_image_tokens) * 100;
-                        tokenProgressBar.style.width = Math.min(pct, 100) + '%';
-                        tokenLabel.textContent = `${generated} / ${num_image_tokens}`;
-                    },
+                    temperature: 1.0,
+                    callback_function: (myTokens) => {
+                        const myCount = myTokens[0].output_ids.length - myInputs.input_ids.dims.at(-1);
+                        const myPct = (myCount / myNumTokens) * 100;
+                        myBar.style.width = myPct + "%";
+                    }
                 });
 
-                tokenProgressBar.style.width = '100%';
-                tokenLabel.textContent = `${num_image_tokens} / ${num_image_tokens}`;
-                setStatus('Decoding image…');
+                myStatus.innerText = "✨ Decoding pixels...";
 
-                // ── 5. Extract only the newly-generated image tokens ───────────
-                const prompt_len   = inputs.input_ids.dims.at(-1);
-                const image_tokens = output_ids.slice(null, [prompt_len, null]);
+                // Slice tokens: remove the prompt tokens, keep the new image tokens
+                const myPromptLen = myInputs.input_ids.dims.at(-1);
+                const myImageTokens = myOutput.slice(null, [myPromptLen, null]);
 
-                // ── 6. Decode tokens → pixel data ──────────────────────────────
-                // processor.decode_image() converts image tokens back into a
-                // RawImage with .data (Uint8ClampedArray), .width and .height.
-                const decoded_image = await processor.decode_image(image_tokens);
+                // Convert tokens back to an image
+                const myDecoded = await myProcessor.decode_image(myImageTokens);
 
-                // ── 7. Draw onto canvas ────────────────────────────────────────
-                outputCanvas.width  = decoded_image.width;
-                outputCanvas.height = decoded_image.height;
-                const ctx = outputCanvas.getContext('2d');
-                const imageData = new ImageData(
-                    decoded_image.data,
-                    decoded_image.width,
-                    decoded_image.height,
-                );
-                ctx.putImageData(imageData, 0, 0);
+                // Draw to Canvas
+                myCanvas.width = myDecoded.width;
+                myCanvas.height = myDecoded.height;
+                myCanvas.style.display = 'block';
+                const myCtx = myCanvas.getContext('2d');
+                const myData = new ImageData(myDecoded.data, myDecoded.width, myDecoded.height);
+                myCtx.putImageData(myData, 0, 0);
 
-                outputBox.style.display = 'block';
-                tokenCounter.style.display = 'none';
-                setStatus('✓ Image generated.', 'success');
-
-            } catch (err) {
-                console.error(err);
-                tokenCounter.style.display = 'none';
-                setStatus(`✗ Error: ${err.message}`, 'error');
+                myStatus.innerText = "✅ Generation Complete!";
+            } catch (myErr) {
+                console.error(myErr);
+                myStatus.innerText = "❌ Gen Error: " + myErr.message;
             } finally {
-                setLoading(false);
-                generateBtn.disabled = false;
+                myGenBtn.disabled = false;
+                myWrap.style.display = 'none';
             }
-        }
-
-        generateBtn.addEventListener('click', generate);
-        regenerateBtn.addEventListener('click', generate);
-
-        // ── Download ──────────────────────────────────────────────────────────
-        downloadBtn.addEventListener('click', () => {
-            const link = document.createElement('a');
-            const prompt = promptInput.value.trim().slice(0, 40).replace(/[^a-z0-9]+/gi, '-');
-            link.download = `janus-${prompt || 'image'}.png`;
-            link.href = outputCanvas.toDataURL('image/png');
-            link.click();
-        });
+        };
     </script>
 </body>
 </html>
