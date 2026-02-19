@@ -40,10 +40,10 @@
 
 <script type="module">
 
+// FIX 1: RawImage is not needed for T2I generation — removed from import.
+// MultiModalityCausalLM is the correct class for Janus in transformers.js.
+import { AutoProcessor, MultiModalityCausalLM, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
 
-import { AutoProcessor, MultiModalityCausalLM, RawImage, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
-
-// Enable WebGPU specifically
 env.allowLocalModels = false;
 
 let myModel = null;
@@ -59,17 +59,27 @@ window.myInitModel = async function() {
     try {
         const myModelId = "onnx-community/Janus-Pro-1B-ONNX";
 
-        // Load processor and model
         myProcessor = await AutoProcessor.from_pretrained(myModelId);
+
         myModel = await MultiModalityCausalLM.from_pretrained(myModelId, {
-            device: 'webgpu',
+            // FIX 2: device must be a per-submodel map, NOT a single string.
+            // prepare_inputs_embeds has a known WebGPU bug; keep it on "wasm".
+            // All other submodels can use "webgpu" for acceleration.
+            device: {
+                prepare_inputs_embeds: "wasm",
+                language_model: "webgpu",
+                lm_head: "webgpu",
+                gen_head: "webgpu",
+                gen_img_embeds: "webgpu",
+                image_decode: "webgpu",
+            },
             dtype: {
-                prepare_inputs_embeds: 'q4',
-                language_model: 'q4',
-                lm_head: 'fp16',
-                gen_head: 'fp16',
-                gen_img_embeds: 'fp16',
-                image_decode: 'fp32', // Essential for decoding quality
+                prepare_inputs_embeds: "fp32",  // wasm submodel — fp32 is safe
+                language_model: "q4",
+                lm_head: "fp16",
+                gen_head: "fp16",
+                gen_img_embeds: "fp16",
+                image_decode: "fp32",           // Essential for decode quality
             }
         });
 
@@ -93,44 +103,53 @@ window.myGenerateImage = async function() {
 
     myGenBtn.disabled = true;
     myCanvas.style.display = 'none';
-    myStatus.innerText = "🎨 Generating 576 tokens...";
     myWrap.style.display = 'block';
     myBar.style.width = "0%";
 
     try {
-        // Janus-Pro uses specific chat markers for T2I
-        const myMessages = [{ role: 'user', content: myPrompt }];
-        const myInputs = await myProcessor(myMessages, { chat_template: 'text_to_image' });
-        
-        const myNumTokens = 576; // 24x24 grid
-        const promptLen = myInputs.input_ids.dims.at(-1);
+        // FIX 3: conversation role must be "User" (capital U), not "user".
+        // This is Janus-specific — it uses its own chat format, not ChatML.
+        const myMessages = [{ role: "User", content: myPrompt }];
+        const myInputs = await myProcessor(myMessages, { chat_template: "text_to_image" });
 
-        const myOutput = await myModel.generate({
+        // FIX 4: Use processor.num_image_tokens (the correct property) instead
+        // of the magic number 576. This ensures compatibility across model variants.
+        const myNumTokens = myProcessor.num_image_tokens;
+        myStatus.innerText = `🎨 Generating ${myNumTokens} tokens...`;
+
+        // FIX 5: Use model.generate_images() instead of model.generate().
+        // For Janus T2I, generate_images() handles the full image generation
+        // pipeline and returns RawImage objects directly — no manual slicing,
+        // no manual decode_image() call, no output_ids indexing needed.
+        // model.generate() is for text generation (image understanding tasks).
+        const myOutputs = await myModel.generate_images({
             ...myInputs,
+            min_new_tokens: myNumTokens,
             max_new_tokens: myNumTokens,
             do_sample: true,
             temperature: 1.0,
-            callback_function: (outputs) => {
-                const currentTokens = outputs[0].output_ids.length - promptLen;
+            // FIX 6: The progress callback for generate/generate_images is named
+            // `callback_function` and receives (output_ids_batch) at each step.
+            // We track count of new tokens by subtracting the input length.
+            callback_function: (output_ids) => {
+                const promptLen = myInputs.input_ids.dims.at(-1);
+                const currentTokens = output_ids[0].length - promptLen;
                 const myPct = Math.min((currentTokens / myNumTokens) * 100, 100);
                 myBar.style.width = myPct + "%";
             }
         });
 
-        myStatus.innerText = "✨ Reconstruction in progress...";
+        myStatus.innerText = "✨ Rendering image...";
 
-        // Slice the output to get only the new image tokens
-        const imageTokens = myOutput.slice(null, [promptLen, null]);
+        // FIX 7: generate_images() returns an array of RawImage objects.
+        // Use .toCanvas() to render the first result directly onto our canvas.
+        // The old code called model.decode_image() manually — that step is
+        // now done internally by generate_images().
+        await myOutputs[0].toCanvas(myCanvas);
 
-        // Decode tokens to image
-        // In v4, we pass the tokens directly to decode_image
-        const decodedImage = await myModel.decode_image(imageTokens);
-
-        // Render to canvas
-        await decodedImage.toCanvas(myCanvas);
-        
         myCanvas.style.display = 'block';
         myStatus.innerText = "✅ Done!";
+
     } catch (myErr) {
         console.error(myErr);
         myStatus.innerText = "❌ Gen Error: " + myErr.message;
