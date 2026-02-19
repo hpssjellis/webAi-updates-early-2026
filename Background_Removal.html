@@ -10,7 +10,7 @@
 
         <div style="text-align: center;">
             <p style="color: #888;">Transparent Result</p>
-            <canvas id="myOutputCanvas" width="320" height="240" style="background-image: linear-gradient(45deg, #222 25%, transparent 25%), linear-gradient(-45deg, #222 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #222 75%), linear-gradient(-45deg, transparent 75%, #222 75%); background-size: 20px 20px; border: 2px solid #ff0077; border-radius: 8px;"></canvas>
+            <canvas id="myOutputCanvas" width="320" height="240" style="background-image: repeating-conic-gradient(#222 0% 25%, #333 0% 50%); background-position: 0 0, 10px 10px; background-size: 20px 20px; border: 2px solid #ff0077; border-radius: 8px;"></canvas>
         </div>
     </div>
 
@@ -18,89 +18,91 @@
         <button id="myActionBtn" style="padding: 12px 30px; background: #ff0077; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 1rem; color: white;">
             ✨ Start Background Removal
         </button>
-        <div id="myStatus" style="margin-top: 10px; font-family: monospace; font-size: 0.8rem; color: #888;">Click to load model</div>
+        <div id="myStatus" style="margin-top: 10px; font-family: monospace; font-size: 0.8rem; color: #888;">Click to load model (approx. 170MB)</div>
     </div>
 
     <script type="module">
-        import { pipeline, env, RawImage } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
+        import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0-alpha.19";
 
+        // Configuration
         env.allowLocalModels = false;
         
         let myRemoverPipe = null;
+        let isProcessing = false;
         const myCam = document.getElementById("myCam");
         const myOutputCanvas = document.getElementById("myOutputCanvas");
         const myCtx = myOutputCanvas.getContext("2d", { willReadFrequently: true });
         const myStatus = document.getElementById("myStatus");
 
         async function mySetupCamera() {
-            const myStream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
-            myCam.srcObject = myStream;
-            return new Promise(resolve => myCam.onloadedmetadata = () => {
-                myCam.play();
-                resolve();
-            });
+            try {
+                const myStream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+                myCam.srcObject = myStream;
+                return new Promise(resolve => myCam.onloadedmetadata = () => resolve());
+            } catch (e) {
+                throw new Error("Camera access denied.");
+            }
         }
 
         async function myProcessLoop() {
             if (!myRemoverPipe) return;
 
             try {
-                // FIX: Pass the video ELEMENT directly to the pipeline
-                const myOutput = await myRemoverPipe(myCam);
+                // 1. Capture current frame from video to an offscreen image
+                const bitmap = await createImageBitmap(myCam);
                 
-                // The mask comes back as a RawImage in the first element
-                const myMask = myOutput[0].mask; 
+                // 2. Run the model on the bitmap
+                const myOutput = await myRemoverPipe(bitmap);
                 
-                // Resize mask to match our display canvas and get the raw bytes
-                const myResizedMask = await myMask.resize(320, 240);
-                const myMaskBytes = myResizedMask.data; 
+                // 3. Get the mask (which is returned as a canvas/image by the new API)
+                const maskCanvas = await myOutput.mask.toCanvas();
 
-                // Draw the current camera frame to our canvas
+                // 4. Draw to output canvas
                 myCtx.clearRect(0, 0, 320, 240);
+                
+                // Mirror the drawing
                 myCtx.save();
-                // Mirror the output to match the mirrored camera input
                 myCtx.translate(320, 0);
                 myCtx.scale(-1, 1);
+                
+                // Draw original video frame
                 myCtx.drawImage(myCam, 0, 0, 320, 240);
+                
+                // Use 'destination-in' to apply the mask as a transparency layer
+                myCtx.globalCompositeOperation = 'destination-in';
+                myCtx.drawImage(maskCanvas, 0, 0, 320, 240);
+                
                 myCtx.restore();
+                myCtx.globalCompositeOperation = 'source-over'; // Reset
 
-                // Manipulate the Alpha channel (transparency)
-                const myImgData = myCtx.getImageData(0, 0, 320, 240);
-                for (let i = 0; i < myMaskBytes.length; ++i) {
-                    // i is the pixel index. Pixel i's alpha is at index (i * 4) + 3
-                    myImgData.data[i * 4 + 3] = myMaskBytes[i]; 
-                }
-
-                myCtx.putImageData(myImgData, 0, 0);
-                myStatus.innerText = "Running...";
+                myStatus.innerText = "Running... ✅";
             } catch (myErr) {
-                console.error(myErr);
+                console.error("Loop Error:", myErr);
             }
 
-            // Keep the loop going
             requestAnimationFrame(myProcessLoop);
         }
 
         async function myInit() {
-            if (myRemoverPipe) return; // Prevent double clicks
+            if (myRemoverPipe) return; 
             
-            myStatus.innerText = "⏳ Loading RMBG-1.4 (WebGPU)...";
+            myStatus.innerText = "⏳ Loading Model (this may take a minute)...";
             try {
                 await mySetupCamera();
                 
+                // Using image-segmentation task
                 myRemoverPipe = await pipeline("image-segmentation", "briaai/RMBG-1.4", {
-                    device: "webgpu",
-                    dtype: "fp16" 
+                    device: "webgpu", // Use "wasm" if you don't have a dedicated GPU
                 });
 
                 myStatus.innerText = "🟢 Model Ready!";
                 myProcessLoop();
             } catch (myErr) {
                 myStatus.innerText = "❌ Error: " + myErr.message;
+                console.error(myErr);
             }
         }
 
-        // Static link to function
         document.getElementById('myActionBtn').onclick = myInit;
     </script>
 </body>
