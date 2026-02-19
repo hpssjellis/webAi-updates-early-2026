@@ -355,64 +355,7 @@
 
         
 
-        /*
-
-function fireInference() {
-    if (myInferring || !myDetector) return;
-    myInferring = true;
-
-    mySnapCtx.drawImage(myCam, 0, 0, mySnap.width, mySnap.height);
-
-    let frame;
-    try {
-        frame = RawImage.fromCanvas(mySnap);
-    } catch (err) {
-        console.error("RawImage error:", err);
-        myInferring = false;
-        return;
-    }
-
-    myDetector(frame, {
-            threshold: 0.15,
-            percentage: true
-        })
-        .then(results => {
-            myLastBoxes = results;
-            myInferCount++;
-            myInferring = false;
-
-            // --- NEW LOGGING CODE ---
-            const logDiv = document.getElementById("myObjectLog");
-            const thresh = myThresh.value / 100;
-
-            // Filter results by current threshold and count occurrences
-            const counts = {};
-            results.forEach(obj => {
-                if (obj.score >= thresh) {
-                    counts[obj.label] = (counts[obj.label] || 0) + 1;
-                }
-            });
-
-            // Format the counts into a string: "person (2), chair (1)"
-            const labelStrings = Object.entries(counts).map(([label, count]) => {
-                return `${label}${count > 1 ? ' (x' + count + ')/n' : ''}`;
-            });
-
-            if (labelStrings.length > 0) {
-                logDiv.innerText = "Detected: " + labelStrings.join(", ");
-            } else {
-                logDiv.innerText = "Detected: nothing";
-            }
-            // ------------------------
-
-        })
-        .catch(err => {
-            console.error("Inference error:", err);
-            myInferring = false;
-        });
-}
-
-  */      
+       
       
 
         // ── Main render loop — 60 fps, never awaited ───────────────────────
