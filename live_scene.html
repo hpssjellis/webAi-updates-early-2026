@@ -17,10 +17,6 @@
         </div>
     </div>
 
-    <!-- FIX 1: Add an offscreen canvas for snapshotting frames.
-         The image-to-text pipeline cannot accept an HTMLVideoElement —
-         RawImage.read() (used internally by all vision pipelines) does not
-         support live video elements. A canvas snapshot is required. -->
     <canvas id="mySnapCanvas" style="display: none;"></canvas>
 
     <div id="mySceneText"
@@ -29,8 +25,6 @@
     </div>
 
     <script type="module">
-        // FIX 2: Pin to a specific known-good version. next.17 is fine but
-        // next.4 is the version confirmed in all our prior fixes — keep consistent.
         import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4';
 
         env.allowLocalModels = false;
@@ -53,7 +47,6 @@
                 return new Promise(resolve => {
                     myVideoElement.onloadedmetadata = () => {
                         myVideoElement.play();
-                        // Size the snap canvas to match the video
                         mySnapCanvas.width  = myVideoElement.videoWidth  || 640;
                         mySnapCanvas.height = myVideoElement.videoHeight || 480;
                         loadingOverlay.style.display = 'none';
@@ -70,19 +63,13 @@
 
             if (myVideoElement.readyState >= 2) {
                 try {
-                    // FIX 3: Snapshot the current video frame to the offscreen canvas.
-                    // The pipeline's internal RawImage.read() supports HTMLCanvasElement
-                    // but NOT HTMLVideoElement — passing the video element directly
-                    // throws or silently produces a blank/corrupt image.
                     mySnapCtx.drawImage(myVideoElement, 0, 0, mySnapCanvas.width, mySnapCanvas.height);
 
-                    // FIX 4: Pass the canvas snapshot, not the video element.
                     const myOutput = await myCaptioner(mySnapCanvas, {
                         max_new_tokens: 25,
                         do_sample: false,
                     });
 
-                    // Output shape is Array<{ generated_text: string }> — this part was correct.
                     if (myOutput && myOutput[0]?.generated_text) {
                         myResultDiv.innerText = myOutput[0].generated_text;
                     }
@@ -91,10 +78,6 @@
                 }
             }
 
-            // FIX 5: Don't use requestAnimationFrame — it fires 60x/second but inference
-            // takes ~500ms+. The nested rAF + setTimeout pattern in the original still
-            // allows stacking if inference takes longer than the timeout interval.
-            // The safe pattern: call setTimeout only AFTER inference resolves (tail scheduling).
             setTimeout(myDescribeScene, 500);
         }
 
@@ -102,28 +85,51 @@
             try {
                 await mySetupCamera();
                 myResultDiv.innerHTML = "Loading scene model (WebGPU)...<br><small style='color:#666'>~400MB on first run</small>";
+                console.log("[Scene AI] Loading model...");
 
-                // FIX 6: dtype 'fp32' is correct for vit-gpt2 on WebGPU — this was fine.
-                // Model ID Xenova/vit-gpt2-image-captioning is also correct for this task.
                 myCaptioner = await pipeline(
                     'image-to-text',
                     'Xenova/vit-gpt2-image-captioning',
                     {
                         device: 'webgpu',
                         dtype: 'fp32',
+                        progress_callback: (p) => {
+                            if (p.status === 'initiate') {
+                                const msg = `Fetching: ${p.file}`;
+                                myResultDiv.innerText = msg;
+                                console.log(`[Scene AI] ${msg}`);
+
+                            } else if (p.status === 'progress' && p.total) {
+                                const pct = Math.round(p.progress);
+                                const mb  = (p.loaded / 1024 / 1024).toFixed(1);
+                                const tot = (p.total  / 1024 / 1024).toFixed(1);
+                                const msg = `↓ ${p.file}  ${mb} / ${tot} MB  (${pct}%)`;
+                                myResultDiv.innerText = msg;
+                                console.log(`[Scene AI] ${msg}`);
+
+                            } else if (p.status === 'done') {
+                                const msg = `✔ Loaded: ${p.file}`;
+                                myResultDiv.innerText = msg;
+                                console.log(`[Scene AI] ${msg}`);
+
+                            } else if (p.status === 'ready') {
+                                const msg = '🟢 Model ready — starting inference...';
+                                myResultDiv.innerText = msg;
+                                console.log(`[Scene AI] ${msg}`);
+                            }
+                        },
                     }
                 );
 
+                console.log("[Scene AI] Pipeline initialised.");
                 myResultDiv.innerText = "Watching scene...";
                 myIsRunning = true;
-
-                // Kick off the loop — each iteration self-schedules via setTimeout at the end
                 myDescribeScene();
 
             } catch (myErr) {
                 myResultDiv.innerText = "Error: " + myErr.message;
                 myResultDiv.style.color = "#ff6666";
-                console.error(myErr);
+                console.error("[Scene AI] Init failed:", myErr);
             }
         }
 
