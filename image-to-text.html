@@ -1,600 +1,111 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Janus-Pro | Vision Analysis</title>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --accent: #00ffcc;
-            --accent2: #ff006e;
-            --bg: #080808;
-            --panel: #101010;
-            --border: #222;
-            --text: #e8e8e8;
-            --muted: #555;
-        }
+<script type="module">
+    import {
+        AutoProcessor,
+        MultiModalityCausalLM,
+        RawImage,
+        env
+    } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
 
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+    // Standard v4 setup
+    env.allowLocalModels = false;
 
-        body {
-            background: var(--bg);
-            color: var(--text);
-            font-family: 'Syne', sans-serif;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 40px 20px 60px;
-            background-image:
-                radial-gradient(ellipse 60% 40% at 20% 10%, rgba(0,255,204,0.04) 0%, transparent 70%),
-                radial-gradient(ellipse 40% 30% at 80% 80%, rgba(255,0,110,0.04) 0%, transparent 70%);
-        }
+    // DOM refs
+    const initBtn = document.getElementById('initBtn');
+    const uiBody = document.getElementById('uiBody');
+    const fileInput = document.getElementById('fileInput');
+    const queryInput = document.getElementById('queryInput');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const resultText = document.getElementById('resultText');
+    const resultBox = document.getElementById('resultBox');
+    const statusMsg = document.getElementById('statusMsg');
+    const progressBar = document.getElementById('progressBar');
+    const progressWrap = document.getElementById('progressWrap');
 
-        header {
-            text-align: center;
-            margin-bottom: 36px;
-        }
+    let model = null;
+    let processor = null;
 
-        header h1 {
-            font-size: clamp(2rem, 5vw, 3.2rem);
-            font-weight: 800;
-            letter-spacing: -1px;
-            background: linear-gradient(135deg, var(--accent) 0%, #00b8ff 50%, var(--accent2) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
+    // --- 1. Load Model (Same as T2I page) ---
+    initBtn.addEventListener('click', async () => {
+        initBtn.disabled = true;
+        statusMsg.textContent = 'Initializing WebGPU...';
+        progressWrap.style.display = 'block';
 
-        header p {
-            font-family: 'Space Mono', monospace;
-            font-size: 0.72rem;
-            color: var(--muted);
-            margin-top: 6px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
-
-        .card {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 28px;
-            width: 100%;
-            max-width: 640px;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .card::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 1px;
-            background: linear-gradient(90deg, transparent, var(--accent), transparent);
-            opacity: 0.5;
-        }
-
-        /* INIT BUTTON */
-        #initBtn {
-            width: 100%;
-            padding: 14px;
-            background: transparent;
-            border: 1px solid var(--accent);
-            color: var(--accent);
-            border-radius: 8px;
-            font-family: 'Space Mono', monospace;
-            font-size: 0.9rem;
-            font-weight: 700;
-            cursor: pointer;
-            letter-spacing: 1px;
-            transition: all 0.2s;
-            position: relative;
-            overflow: hidden;
-        }
-
-        #initBtn::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: var(--accent);
-            transform: translateX(-100%);
-            transition: transform 0.3s ease;
-            z-index: 0;
-        }
-
-        #initBtn:hover::before { transform: translateX(0); }
-        #initBtn:hover { color: #000; }
-        #initBtn span { position: relative; z-index: 1; }
-        #initBtn:disabled { opacity: 0.4; cursor: not-allowed; }
-        #initBtn:disabled::before { display: none; }
-
-        /* UI BODY */
-        #uiBody { display: none; margin-top: 24px; }
-
-        .drop-zone {
-            border: 2px dashed var(--border);
-            border-radius: 10px;
-            padding: 28px 20px;
-            text-align: center;
-            cursor: pointer;
-            transition: border-color 0.2s, background 0.2s;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .drop-zone:hover, .drop-zone.drag-over {
-            border-color: var(--accent);
-            background: rgba(0,255,204,0.03);
-        }
-
-        .drop-zone input[type="file"] {
-            position: absolute;
-            inset: 0;
-            opacity: 0;
-            cursor: pointer;
-            width: 100%;
-            height: 100%;
-        }
-
-        .drop-zone .dz-label {
-            font-family: 'Space Mono', monospace;
-            font-size: 0.75rem;
-            color: var(--muted);
-            pointer-events: none;
-        }
-
-        .drop-zone .dz-label strong { color: var(--accent); }
-
-        #previewWrap {
-            display: none;
-            margin-top: 14px;
-            position: relative;
-            border-radius: 8px;
-            overflow: hidden;
-            max-height: 260px;
-        }
-
-        #previewWrap img {
-            width: 100%;
-            max-height: 260px;
-            object-fit: contain;
-            border-radius: 8px;
-            background: #000;
-            display: block;
-        }
-
-        #clearImg {
-            position: absolute;
-            top: 8px; right: 8px;
-            background: rgba(0,0,0,0.7);
-            border: 1px solid #444;
-            color: #fff;
-            border-radius: 50%;
-            width: 28px; height: 28px;
-            cursor: pointer;
-            font-size: 14px;
-            display: flex; align-items: center; justify-content: center;
-            transition: background 0.2s;
-        }
-        #clearImg:hover { background: var(--accent2); }
-
-        .query-row {
-            display: flex;
-            gap: 8px;
-            margin-top: 14px;
-        }
-
-        #queryInput {
-            flex: 1;
-            padding: 10px 14px;
-            background: #000;
-            border: 1px solid var(--border);
-            color: var(--text);
-            border-radius: 8px;
-            font-family: 'Syne', sans-serif;
-            font-size: 0.9rem;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-
-        #queryInput:focus { border-color: var(--accent); }
-        #queryInput::placeholder { color: var(--muted); }
-
-        #analyzeBtn {
-            padding: 10px 18px;
-            background: var(--accent);
-            color: #000;
-            border: none;
-            border-radius: 8px;
-            font-family: 'Space Mono', monospace;
-            font-size: 0.8rem;
-            font-weight: 700;
-            cursor: pointer;
-            white-space: nowrap;
-            transition: opacity 0.2s, transform 0.1s;
-        }
-
-        #analyzeBtn:hover { opacity: 0.85; }
-        #analyzeBtn:active { transform: scale(0.97); }
-        #analyzeBtn:disabled { opacity: 0.35; cursor: not-allowed; }
-
-        /* RESULT */
-        #resultBox {
-            margin-top: 18px;
-            display: none;
-        }
-
-        #resultBox .res-label {
-            font-family: 'Space Mono', monospace;
-            font-size: 0.65rem;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            color: var(--accent);
-            margin-bottom: 8px;
-        }
-
-        #resultText {
-            background: #000;
-            padding: 16px;
-            border-radius: 8px;
-            border-left: 3px solid var(--accent);
-            font-size: 0.93rem;
-            line-height: 1.7;
-            color: var(--text);
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-
-        /* STATUS */
-        .status-bar {
-            margin-top: 16px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        #spinner {
-            display: none;
-            width: 14px; height: 14px;
-            border: 2px solid var(--border);
-            border-top-color: var(--accent);
-            border-radius: 50%;
-            animation: spin 0.7s linear infinite;
-            flex-shrink: 0;
-        }
-
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        #statusMsg {
-            font-family: 'Space Mono', monospace;
-            font-size: 0.72rem;
-            color: var(--muted);
-        }
-
-        #statusMsg.error { color: var(--accent2); }
-        #statusMsg.success { color: var(--accent); }
-
-        /* PROGRESS BAR */
-        #progressWrap {
-            display: none;
-            margin-top: 14px;
-            background: #000;
-            border-radius: 4px;
-            overflow: hidden;
-            height: 4px;
-        }
-
-        #progressBar {
-            height: 100%;
-            background: linear-gradient(90deg, var(--accent), #00b8ff);
-            width: 0%;
-            transition: width 0.3s ease;
-            border-radius: 4px;
-        }
-
-        /* COMPATIBILITY WARNING */
-        #compatWarn {
-            display: none;
-            background: rgba(255,0,110,0.08);
-            border: 1px solid rgba(255,0,110,0.3);
-            border-radius: 8px;
-            padding: 12px 16px;
-            font-family: 'Space Mono', monospace;
-            font-size: 0.72rem;
-            color: #ff6699;
-            line-height: 1.6;
-            margin-bottom: 16px;
-        }
-    </style>
-</head>
-<body>
-    <header>
-        <h1>👁 Janus-Pro</h1>
-        <p>Local Vision Analysis · WebGPU · No Server</p>
-    </header>
-
-    <div class="card">
-        <div id="compatWarn"></div>
-
-        <button id="initBtn"><span>⚡ Load Vision Model</span></button>
-
-        <div id="progressWrap"><div id="progressBar"></div></div>
-
-        <div id="uiBody">
-            <div class="drop-zone" id="dropZone">
-                <input type="file" id="fileInput" accept="image/*">
-                <div class="dz-label">
-                    <strong>Click or drop</strong> an image here<br>
-                    PNG, JPG, WEBP, GIF supported
-                </div>
-            </div>
-
-            <div id="previewWrap">
-                <img id="previewImg" alt="Preview">
-                <button id="clearImg" title="Remove image">✕</button>
-            </div>
-
-            <div class="query-row">
-                <input type="text" id="queryInput" placeholder="What is in this image?" maxlength="300">
-                <button id="analyzeBtn">Analyze</button>
-            </div>
-
-            <div id="resultBox">
-                <div class="res-label">Analysis</div>
-                <div id="resultText"></div>
-            </div>
-        </div>
-
-        <div class="status-bar">
-            <div id="spinner"></div>
-            <div id="statusMsg">Model not loaded.</div>
-        </div>
-    </div>
-
-    <script type="module">
-        // ─── Transformers.js v4 — official CDN ────────────────────────────────
-        // Uses the same import the user confirmed works for other pipelines.
-        // MultiModalityCausalLM + AutoProcessor is the correct v4 API for Janus.
-        import {
-            AutoProcessor,
-            MultiModalityCausalLM,
-            RawImage,
-        } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4";
-
-        // ─── DOM refs ──────────────────────────────────────────────────────────
-        const initBtn      = document.getElementById('initBtn');
-        const uiBody       = document.getElementById('uiBody');
-        const fileInput    = document.getElementById('fileInput');
-        const dropZone     = document.getElementById('dropZone');
-        const previewWrap  = document.getElementById('previewWrap');
-        const previewImg   = document.getElementById('previewImg');
-        const clearImg     = document.getElementById('clearImg');
-        const queryInput   = document.getElementById('queryInput');
-        const analyzeBtn   = document.getElementById('analyzeBtn');
-        const resultBox    = document.getElementById('resultBox');
-        const resultText   = document.getElementById('resultText');
-        const statusMsg    = document.getElementById('statusMsg');
-        const spinner      = document.getElementById('spinner');
-        const progressWrap = document.getElementById('progressWrap');
-        const progressBar  = document.getElementById('progressBar');
-        const compatWarn   = document.getElementById('compatWarn');
-
-        // ─── State ─────────────────────────────────────────────────────────────
-        let model = null;
-        let processor = null;
-        let currentObjectURL = null;
-
-        // ─── Helpers ───────────────────────────────────────────────────────────
-        function setStatus(msg, type = '') {
-            statusMsg.textContent = msg;
-            statusMsg.className = type;
-        }
-
-        function setLoading(active) {
-            spinner.style.display = active ? 'block' : 'none';
-        }
-
-        function setProgress(pct) {
-            if (pct === null) {
-                progressWrap.style.display = 'none';
-                progressBar.style.width = '0%';
-            } else {
-                progressWrap.style.display = 'block';
-                progressBar.style.width = Math.min(pct, 100) + '%';
-            }
-        }
-
-        // ─── WebGPU compatibility check ────────────────────────────────────────
-        async function checkCompat() {
-            const issues = [];
-            if (!navigator.gpu) {
-                issues.push('⚠️ WebGPU not detected. Use Chrome 113+ or Edge 113+ on desktop for best results.');
-            } else {
-                try {
-                    const adapter = await navigator.gpu.requestAdapter();
-                    if (!adapter) issues.push('⚠️ No WebGPU adapter found — your GPU driver may need updating.');
-                } catch (e) {
-                    issues.push('⚠️ WebGPU probe failed: ' + e.message);
-                }
-            }
-            if (issues.length) {
-                compatWarn.innerHTML = issues.join('<br>') +
-                    '<br><br>You can still try — the library may fall back to WASM (much slower, but functional).';
-                compatWarn.style.display = 'block';
-            }
-        }
-        await checkCompat();
-
-        // ─── Load model ────────────────────────────────────────────────────────
-        initBtn.addEventListener('click', async () => {
-            initBtn.disabled = true;
-            setLoading(true);
-            setStatus('Initialising…');
-            setProgress(0);
-
+        try {
             const MODEL_ID = "onnx-community/Janus-Pro-1B-ONNX";
 
-            // Progress callback — fires for each file being downloaded
-            const progressCallback = (info) => {
-                if (info.status === 'progress' && info.total) {
-                    const pct = (info.loaded / info.total) * 100;
-                    setProgress(pct);
-                    const mb = (info.loaded / 1048576).toFixed(1);
-                    const total = (info.total / 1048576).toFixed(1);
-                    setStatus(`↓ ${info.file}  ${mb} / ${total} MB`);
-                } else if (info.status === 'initiate') {
-                    setStatus(`Fetching: ${info.file}`);
-                } else if (info.status === 'done') {
-                    setStatus(`✓ ${info.file}`);
+            processor = await AutoProcessor.from_pretrained(MODEL_ID);
+            model = await MultiModalityCausalLM.from_pretrained(MODEL_ID, {
+                device: 'webgpu',
+                dtype: {
+                    prepare_inputs_embeds: 'q4',
+                    language_model: 'q4',
+                    lm_head: 'fp16',
+                    gen_head: 'fp16',
+                    gen_img_embeds: 'fp16',
+                    image_decode: 'fp32',
                 }
-            };
+            });
 
-            try {
-                // Load processor — handles image pre-processing + chat template
-                processor = await AutoProcessor.from_pretrained(MODEL_ID, {
-                    progress_callback: progressCallback,
-                });
-
-                // Load model — q4 dtype keeps VRAM reasonable; webgpu for speed
-                // Janus-Pro-1B-ONNX uses the dtype map below (vision fp16, text q4)
-                model = await MultiModalityCausalLM.from_pretrained(MODEL_ID, {
-                    device: 'webgpu',
-                    dtype: {
-                        prepare_inputs_embeds: 'q4',
-                        language_model:        'q4',
-                        lm_head:               'fp16',
-                        gen_head:              'fp16',
-                        gen_img_embeds:        'fp16',
-                        image_decode:          'fp32',
-                    },
-                    progress_callback: progressCallback,
-                });
-
-                setProgress(100);
-                setTimeout(() => setProgress(null), 800);
-                setLoading(false);
-                setStatus('✓ Model ready — drop an image to begin.', 'success');
-                initBtn.style.display = 'none';
-                uiBody.style.display = 'block';
-
-            } catch (err) {
-                console.error(err);
-                setLoading(false);
-                setProgress(null);
-                initBtn.disabled = false;
-                setStatus('✗ Load failed: ' + err.message, 'error');
-            }
-        });
-
-        // ─── Image preview helpers ─────────────────────────────────────────────
-        function showPreview(file) {
-            if (currentObjectURL) URL.revokeObjectURL(currentObjectURL);
-            currentObjectURL = URL.createObjectURL(file);
-            previewImg.src = currentObjectURL;
-            previewWrap.style.display = 'block';
-            dropZone.style.display = 'none';
-            resultBox.style.display = 'none';
+            statusMsg.textContent = '🟢 Ready';
+            initBtn.style.display = 'none';
+            uiBody.style.display = 'block';
+            progressWrap.style.display = 'none';
+        } catch (err) {
+            statusMsg.textContent = '❌ Load failed: ' + err.message;
+            initBtn.disabled = false;
         }
+    });
 
-        fileInput.addEventListener('change', () => {
-            if (fileInput.files[0]) showPreview(fileInput.files[0]);
-        });
+    // --- 2. Analyze Image (V4 Multimodal logic) ---
+    analyzeBtn.addEventListener('click', async () => {
+        const file = fileInput.files[0];
+        if (!file) return alert("Please select an image");
 
-        // Drag-and-drop onto the drop zone
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('drag-over');
-        });
-        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('drag-over');
-            const f = e.dataTransfer.files[0];
-            if (f && f.type.startsWith('image/')) {
-                const dt = new DataTransfer();
-                dt.items.add(f);
-                fileInput.files = dt.files;
-                showPreview(f);
-            }
-        });
+        analyzeBtn.disabled = true;
+        statusMsg.textContent = 'Reading image...';
 
-        clearImg.addEventListener('click', () => {
-            if (currentObjectURL) { URL.revokeObjectURL(currentObjectURL); currentObjectURL = null; }
-            previewImg.src = '';
-            previewWrap.style.display = 'none';
-            dropZone.style.display = 'block';
-            fileInput.value = '';
-            resultBox.style.display = 'none';
-        });
+        try {
+            // Convert file to RawImage
+            const blobURL = URL.createObjectURL(file);
+            const image = await RawImage.fromURL(blobURL);
+            URL.revokeObjectURL(blobURL);
 
-        // ─── Analyse ───────────────────────────────────────────────────────────
-        analyzeBtn.addEventListener('click', async () => {
-            const file = fileInput.files[0];
-            if (!file)  { setStatus('⚠️ Select an image first.', 'error'); return; }
-            if (!model) { setStatus('⚠️ Model not loaded yet.', 'error'); return; }
+            // IMPORTANT: Janus-Pro vision prompt formatting
+            const conversation = [
+                {
+                    role: '<|User|>',
+                    content: '<image_placeholder>\n' + (queryInput.value || "Describe this image."),
+                    images: [image],
+                }
+            ];
 
-            const query = queryInput.value.trim() || "Describe this image in detail.";
-            analyzeBtn.disabled = true;
-            setLoading(true);
-            setStatus('Processing image…');
-            resultBox.style.display = 'none';
+            statusMsg.textContent = 'Encoding & Thinking...';
+            
+            // Apply chat template for vision
+            const inputs = await processor(conversation);
 
-            try {
-                // ── 1. Load image ──────────────────────────────────────────────
-                // Create a fresh object URL for RawImage, then immediately revoke.
-                const blobURL = URL.createObjectURL(file);
-                const image = await RawImage.fromURL(blobURL);
-                URL.revokeObjectURL(blobURL);
+            const output_ids = await model.generate({
+                ...inputs,
+                max_new_tokens: 128,
+                do_sample: false, // Better for analysis/description
+            });
 
-                // ── 2. Build conversation ─────────────────────────────────────
-                // This is the exact pattern from the official Janus-Pro-1B-ONNX
-                // model card. The processor handles chat templating internally.
-                const conversation = [
-                    {
-                        role: '<|User|>',
-                        content: '<image_placeholder>\n' + query,
-                        images: [image],
-                    },
-                    {
-                        role: '<|Assistant|>',
-                        content: '',
-                    },
-                ];
+            // Slicing tokens (removing prompt tokens from output)
+            const prompt_len = inputs.input_ids.dims.at(-1);
+            const new_tokens = output_ids.slice(null, [prompt_len, null]);
+            
+            const decoded = processor.batch_decode(new_tokens, {
+                skip_special_tokens: true,
+            });
 
-                // ── 3. Tokenise + process image ───────────────────────────────
-                const inputs = await processor(conversation);
-
-                // ── 4. Generate ───────────────────────────────────────────────
-                setStatus('Generating response…');
-                const output_ids = await model.generate({
-                    ...inputs,
-                    max_new_tokens: 256,
-                    do_sample: false,
-                });
-
-                // ── 5. Decode only newly generated tokens ─────────────────────
-                // Slice off the prompt tokens so we only decode the new output.
-                const prompt_len = inputs.input_ids.dims.at(-1);
-                const new_tokens = output_ids.slice(null, [prompt_len, null]);
-                const decoded = processor.batch_decode(new_tokens, {
-                    skip_special_tokens: true,
-                });
-
-                const answer = (decoded[0] || '').trim() || '(No response generated)';
-                resultText.textContent = answer;
-                resultBox.style.display = 'block';
-                setStatus('✓ Done.', 'success');
-
-            } catch (err) {
-                console.error(err);
-                setStatus('✗ Error: ' + err.message, 'error');
-            } finally {
-                setLoading(false);
-                analyzeBtn.disabled = false;
-            }
-        });
-    </script>
-</body>
-</html>
+            resultText.textContent = decoded[0].trim();
+            resultBox.style.display = 'block';
+            statusMsg.textContent = '✅ Analysis Complete';
+        } catch (err) {
+            console.error(err);
+            statusMsg.textContent = '❌ Error: ' + err.message;
+        } finally {
+            analyzeBtn.disabled = false;
+        }
+    });
+</script>
