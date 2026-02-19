@@ -1,0 +1,32 @@
+<body style="font-family: sans-serif; padding: 20px; text-align: center;">
+    <h1>Text Analysis</h1>
+    <select id="myTask" style="padding: 10px;">
+        <option value="sentiment-analysis">Sentiment Analysis</option>
+        <option value="summarization">Summarization</option>
+        <option value="question-answering">Question Answering</option>
+    </select>
+    <br><br>
+    <textarea id="myInput" style="width: 80%; height: 100px; padding: 10px;">The capital of France is Paris. It is a beautiful city.</textarea>
+    <br><br>
+    <button id="myRunBtn" style="padding: 10px 20px;">Run AI</button>
+    <pre id="myOutput" style="text-align: left; background: #eee; padding: 15px; margin-top: 20px;"></pre>
+
+    <script type="module">
+        import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4';
+        let myPipe;
+        async function myRun() {
+            const myTask = document.getElementById('myTask').value;
+            const myText = document.getElementById('myInput').value;
+            document.getElementById('myOutput').innerText = "Loading...";
+            myPipe = await pipeline(myTask, null, { device: 'webgpu', dtype: 'q8' });
+            
+            // Special handling for QA
+            const myResult = (myTask === 'question-answering') 
+                ? await myPipe("What is the capital?", myText)
+                : await myPipe(myText);
+                
+            document.getElementById('myOutput').innerText = JSON.stringify(myResult, null, 2);
+        }
+        document.getElementById('myRunBtn').onclick = myRun;
+    </script>
+</body>
