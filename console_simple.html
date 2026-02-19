@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Transformers.js v4 Simple Demo</title>
+</head>
+<body style="font-family: sans-serif; padding: 20px; text-align: center;">
+
+    <h1>Sentiment Analysis (v4 Next)</h1>
+    <p>Open Console (Ctrl+Shift+I) to see the model loading logs.</p>
+
+    <div style="margin: 20px;">
+        <input type="text" id="myTextInput" value="This works perfectly!" style="padding: 10px; width: 300px;">
+        <button id="myRunButton" style="padding: 10px 20px; cursor: pointer;">Analyze Sentiment</button>
+    </div>
+
+    <div id="myResultDisplay" style="margin-top: 20px; font-weight: bold; font-size: 1.2rem; color: #333;">
+        Results will appear here...
+    </div>
+
+    <script type="module">
+        // Importing the ESM version from the CDN
+        import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.4/dist/transformers.mjs';
+
+        // Variable held in module scope to prevent re-loading the model every click
+        let mySentimentClassifier;
+
+        async function myRunInference() {
+            const myStatusElement = document.getElementById('myResultDisplay');
+            const myInputText = document.getElementById('myTextInput').value;
+            
+            myStatusElement.innerText = "Loading model/Processing...";
+
+            try {
+                // Initialize the pipeline if it hasn't been created yet
+                if (!mySentimentClassifier) {
+                    // Specifying the model and dtype to reduce console warnings
+                    mySentimentClassifier = await pipeline('sentiment-analysis', 'Xenova/distilbert-base-uncased-finetuned-sst-2-english', {
+                        dtype: 'q8'
+                    });
+                }
+
+                // Perform the inference
+                const myInferenceResult = await mySentimentClassifier(myInputText);
+                
+                // Format the output for the user
+                const myLabel = myInferenceResult[0].label;
+                const myConfidenceScore = (myInferenceResult[0].score * 100).toFixed(2);
+                
+                myStatusElement.innerText = `Result: ${myLabel} (${myConfidenceScore}% confidence)`;
+                console.log("Full Inference Result:", myInferenceResult);
+
+            } catch (myError) {
+                console.error("Inference Error:", myError);
+                myStatusElement.innerText = "Error: Check console for details.";
+            }
+        }
+
+        // Static link to the function name for the button click
+        document.getElementById('myRunButton').onclick = myRunInference;
+    </script>
+
+</body>
+</html>
